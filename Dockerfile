@@ -28,5 +28,8 @@ RUN npx playwright install chromium
 
 WORKDIR /workspace
 
+# Ensure npm cache is writable for rootless podman with --userns=keep-id
+RUN mkdir -p /workspace/.npm && chmod 777 /workspace/.npm
+
 # MCP config template (copied to user home at runtime via --userns=keep-id)
 COPY mcp-config.json /etc/claude/mcp-config.json

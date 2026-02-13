@@ -53,7 +53,7 @@
 
   1. Phase 1 (now): Use podman secrets for ANTHROPIC_API_KEY and GITHUB_TOKEN. Generate SSH certs manually with a local CA:
       # On management host, sign agent's public key
-      ssh-keygen -s ca_key -I "ha-agent" -n homeassistant -V +1d agent_key.pub
+      ssh-keygen -s ca_key -I "ha-agent" -n ha_agent -V +1d agent_key.pub
   1. Mount the cert into the container, regenerate daily via cron.
   2. Phase 2 (later): If you need dynamic secrets, audit logging, or manage multiple agents, deploy Vault with SSH secrets engine.
   The sidecar pattern then automates cert rotation.

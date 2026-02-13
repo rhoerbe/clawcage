@@ -1,0 +1,9 @@
+agent_network_subnet: "10.89.1.0/24"
+agent_network_gateway: "10.89.1.1"
+proxy_port: 8888
+
+# Allowed direct connections (bypassing proxy)
+agent_allowed_destinations:
+  - ip: "10.4.4.10"
+    ports: [22]
+    comment: "SSH to Home Assistant"

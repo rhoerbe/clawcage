@@ -1,0 +1,26 @@
+User tinyproxy
+Group tinyproxy
+
+Port {{ tinyproxy_port }}
+Listen {{ tinyproxy_listen }}
+
+Timeout 600
+DefaultErrorFile "/usr/share/tinyproxy/default.html"
+StatFile "/usr/share/tinyproxy/stats.html"
+LogFile "/var/log/tinyproxy/tinyproxy.log"
+LogLevel Info
+PidFile "/run/tinyproxy/tinyproxy.pid"
+
+MaxClients 100
+{% for subnet in tinyproxy_allow_subnets %}
+Allow {{ subnet }}
+{% endfor %}
+
+# Domain-based filtering
+FilterURLs On
+Filter "/etc/tinyproxy/allowlist"
+FilterType ere
+FilterDefaultDeny Yes
+
+ConnectPort 443
+ConnectPort 563

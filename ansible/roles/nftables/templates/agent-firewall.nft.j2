@@ -1,0 +1,27 @@
+# Agent container network isolation
+# Managed by Ansible - do not edit manually
+
+table inet agent-firewall {
+    chain forward {
+        type filter hook forward priority 0; policy accept;
+
+        # Jump to agent egress rules for traffic from agent network
+        ip saddr {{ agent_network_subnet }} jump agent-egress
+    }
+
+    chain agent-egress {
+        # Allow established/related connections
+        ct state established,related accept
+
+        # Allow connections to proxy on host gateway
+        ip daddr {{ agent_network_gateway }} tcp dport {{ proxy_port }} accept
+
+{% for dest in agent_allowed_destinations %}
+        # {{ dest.comment }}
+        ip daddr {{ dest.ip }} tcp dport { {{ dest.ports | join(', ') }} } accept
+{% endfor %}
+
+        # Log and drop everything else
+        log prefix "agent-blocked: " drop
+    }
+}

@@ -1,0 +1,6 @@
+- name: Set up ha_agent user and environment
+  hosts: riva
+  become: true
+
+  roles:
+    - agent_user

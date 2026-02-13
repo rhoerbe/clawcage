@@ -1,0 +1,5 @@
+# Allowed domains for agent container proxy
+# Regex patterns matched against request URLs
+{% for domain in tinyproxy_allowed_domains %}
+{{ domain }}
+{% endfor %}

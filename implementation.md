@@ -46,7 +46,7 @@ podman run -it --name claude-ha-agent \
 ssh-keygen -t ed25519 -f ca_key -C "agent-ca"
 
 # Sign agent's public key (daily via cron)
-ssh-keygen -s ca_key -I "ha-agent" -n homeassistant -V +1d agent_key.pub
+ssh-keygen -s ca_key -I "ha-agent" -n ha_agent -V +1d agent_key.pub
 ```
 
 ### authorized_keys on HA host
@@ -58,7 +58,7 @@ command="/usr/local/bin/ha-agent-shell",no-port-forwarding,no-X11-forwarding ssh
 ```
 Host ha
     HostName 10.4.4.10
-    User homeassistant
+    User ha_agent
     StrictHostKeyChecking accept-new
 ```
 

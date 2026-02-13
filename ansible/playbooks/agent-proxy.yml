@@ -1,0 +1,7 @@
+- name: Configure network isolation for agent containers
+  hosts: riva
+  become: true
+
+  roles:
+    - tinyproxy
+    - nftables

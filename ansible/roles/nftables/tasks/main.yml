@@ -1,0 +1,34 @@
+- name: Install nftables
+  ansible.builtin.apt:
+    name: nftables
+    state: present
+
+- name: Ensure /etc/nftables.d directory exists
+  ansible.builtin.file:
+    path: /etc/nftables.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Deploy agent firewall rules
+  ansible.builtin.template:
+    src: agent-firewall.nft.j2
+    dest: /etc/nftables.d/agent-firewall.nft
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload nftables
+
+- name: Ensure nftables.d include exists in main config
+  ansible.builtin.lineinfile:
+    path: /etc/nftables.conf
+    line: 'include "/etc/nftables.d/*.nft"'
+    insertafter: EOF
+  notify: Reload nftables
+
+- name: Enable and start nftables
+  ansible.builtin.systemd:
+    name: nftables
+    enabled: true
+    state: started

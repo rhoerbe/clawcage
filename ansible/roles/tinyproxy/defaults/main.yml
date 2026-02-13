@@ -1,0 +1,15 @@
+tinyproxy_port: 8888
+# Listen on all interfaces; access restricted by Allow directive
+tinyproxy_listen: "0.0.0.0"
+# Allow subnets - includes podman container network and slirp4netns/pasta ranges
+tinyproxy_allow_subnets:
+  - "10.89.1.0/24"   # podman ha-agent-net
+  - "10.0.2.0/24"    # slirp4netns default
+  - "10.2.2.0/24"    # pasta default
+
+tinyproxy_allowed_domains:
+  - "^10\\.4\\.4\\.10(:[0-9]+)?"
+  - "^(.*\\.)?github\\.com(:[0-9]+)?"
+  - "^(.*\\.)?githubusercontent\\.com(:[0-9]+)?"
+  - "^api\\.anthropic\\.com(:[0-9]+)?"
+  - "^(.*\\.)?npmjs\\.org(:[0-9]+)?"
