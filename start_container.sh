@@ -51,7 +51,8 @@ podman --cgroup-manager=cgroupfs rm -f "$CONTAINER_NAME" 2>/dev/null || true
 exec podman --cgroup-manager=cgroupfs run --rm -it \
     --name "$CONTAINER_NAME" \
     --userns=keep-id \
-    -v "$AGENT_HOME/workspace":/workspace:Z \
+    -v "$AGENT_HOME/.claude":/workspace/.claude:Z \
+    -v "$AGENT_HOME/workspace":/workspace/code:Z \
     -v "$AGENT_HOME/sessions":/sessions:Z \
     --secret anthropic_api_key,target=/run/secrets/anthropic_api_key \
     --secret github_token,target=/run/secrets/github_token \
