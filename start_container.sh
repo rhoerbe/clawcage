@@ -44,6 +44,9 @@ fi
 
 echo "Preflight checks passed."
 
+# Load GitHub token for gh CLI
+GH_TOKEN=$(cat "$AGENT_HOME/.secrets/github_token")
+
 # Remove old container if exists
 podman --cgroup-manager=cgroupfs rm -f "$CONTAINER_NAME" 2>/dev/null || true
 
@@ -61,5 +64,6 @@ exec podman --cgroup-manager=cgroupfs run --rm -it \
     -e HTTP_PROXY=http://host.containers.internal:8888 \
     -e HTTPS_PROXY=http://host.containers.internal:8888 \
     -e HOME=/workspace \
+    -e GH_TOKEN="$GH_TOKEN" \
     "$CONTAINER_NAME" \
     "${@:-claude}"
