@@ -50,14 +50,8 @@ GH_TOKEN=$(cat "$AGENT_HOME/.secrets/github_token")
 # Remove old container if exists
 podman --cgroup-manager=cgroupfs rm -f "$CONTAINER_NAME" 2>/dev/null || true
 
-# Determine TTY flags
-TTY_FLAGS=""
-if [[ -t 0 ]]; then
-    TTY_FLAGS="-it"
-fi
-
-# Start container
-exec podman --cgroup-manager=cgroupfs run --rm $TTY_FLAGS \
+# Start container with TTY
+exec podman --cgroup-manager=cgroupfs run --rm -it \
     --name "$CONTAINER_NAME" \
     --userns=keep-id \
     -v "$AGENT_HOME/.claude":/workspace/.claude:Z \
