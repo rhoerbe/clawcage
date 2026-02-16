@@ -26,6 +26,10 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
 # Playwright MCP server + browser
 RUN npx playwright install chromium
 
+# MQTT MCP server for debugging MQTT brokers
+RUN git clone --depth 1 https://github.com/sergiudanstan/mqtt-mcp-server.git /opt/mqtt-mcp-server \
+    && cd /opt/mqtt-mcp-server && npm install && npm run build
+
 WORKDIR /workspace
 
 # Ensure npm cache is writable for rootless podman with --userns=keep-id

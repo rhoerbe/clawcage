@@ -3,6 +3,10 @@
     "playwright": {
       "command": "npx",
       "args": ["@anthropic-ai/mcp-server-playwright"]
+    },
+    "mqtt": {
+      "command": "node",
+      "args": ["/opt/mqtt-mcp-server/dist/index.js"]
     }
   }
 }

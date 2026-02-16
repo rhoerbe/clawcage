@@ -40,6 +40,16 @@ GH_TOKEN=$(cat "$AGENT_HOME/workspace/.secrets/github_token")
 # ANTHROPIC_API_KEY=$(cat "$AGENT_HOME/workspace/.secrets/anthropic_api_key")  # using OAuth token instead
 HA_ACCESS_TOKEN=$(cat "$AGENT_HOME/workspace/.secrets/ha_access_token")
 
+# MQTT credentials (optional - create files if MQTT debugging is needed)
+MQTT_USER=""
+MQTT_PASS=""
+if [[ -f "$AGENT_HOME/workspace/.secrets/mqtt_username" ]]; then
+    MQTT_USER=$(cat "$AGENT_HOME/workspace/.secrets/mqtt_username")
+fi
+if [[ -f "$AGENT_HOME/workspace/.secrets/mqtt_password" ]]; then
+    MQTT_PASS=$(cat "$AGENT_HOME/workspace/.secrets/mqtt_password")
+fi
+
 # Remove old container if exists
 podman --cgroup-manager=cgroupfs rm -f "$CONTAINER_NAME" 2>/dev/null || true
 
@@ -57,5 +67,7 @@ exec podman --cgroup-manager=cgroupfs run --rm -it \
     -e HOME=/workspace \
     -e GH_TOKEN="$GH_TOKEN" \
     -e HA_ACCESS_TOKEN="$HA_ACCESS_TOKEN" \
+    -e MQTT_USER="$MQTT_USER" \
+    -e MQTT_PASS="$MQTT_PASS" \
     "$CONTAINER_NAME" \
     "${@:-claude $CLAUDE_ARGS}"
