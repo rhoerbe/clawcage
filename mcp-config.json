@@ -6,7 +6,7 @@
     },
     "mqtt": {
       "command": "node",
-      "args": ["/opt/mqtt-mcp-server/dist/index.js"]
+      "args": ["/opt/mqtt-mcp-server/build/index.js"]
     }
   }
 }
