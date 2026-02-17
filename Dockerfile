@@ -10,6 +10,7 @@ RUN apt-get update && apt-get install -y \
     iputils-ping \
     jq \
     vim \
+    mosquitto-clients \
     # Playwright's Chromium dependencies
     libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 \
     libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 \
@@ -33,10 +34,6 @@ RUN curl -fsSL https://github.com/mikefarah/yq/releases/latest/download/yq_linux
 
 # Playwright MCP server + browser
 RUN npm install -g playwright @anthropic-ai/mcp-server-playwright && playwright install chromium
-
-# MQTT MCP server for debugging MQTT brokers
-RUN git clone --depth 1 https://github.com/sergiudanstan/mqtt-mcp-server.git /opt/mqtt-mcp-server \
-    && cd /opt/mqtt-mcp-server && npm install && npm run build
 
 WORKDIR /workspace
 

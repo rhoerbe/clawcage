@@ -13,7 +13,9 @@ You are running in an isolated container with restricted network access.
 
 ### MCP Servers
 - **Playwright** - Browser automation for HA web UI
-- **MQTT** - Debug MQTT brokers, read discovery messages
+
+### CLI Tools
+- **mosquitto_sub** / **mosquitto_pub** - MQTT client tools for debugging brokers
 
 ### Credentials (environment variables)
 - `GH_TOKEN` - GitHub personal access token for repo rhoerbe/hadmin

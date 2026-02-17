@@ -2,10 +2,6 @@
   "mcpServers": {
     "playwright": {
       "command": "mcp-server-playwright"
-    },
-    "mqtt": {
-      "command": "node",
-      "args": ["/opt/mqtt-mcp-server/build/index.js"]
     }
   }
 }
