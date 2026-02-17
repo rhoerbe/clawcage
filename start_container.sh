@@ -25,10 +25,10 @@ source "$SCRIPT_DIR/config.sh"
 export XDG_RUNTIME_DIR=/run/user/$(id -u)
 
 # Create directories if they don't exist
-mkdir -p "$AGENT_HOME/workspace/.claude" "$AGENT_HOME/sessions"
+mkdir -p "$AGENT_HOME/workspace/$REPO_NAME/.claude" "$AGENT_HOME/sessions"
 
-# Install MCP config (merge mcpServers into settings.json)
-MCP_CONFIG="$AGENT_HOME/workspace/.claude/settings.json"
+# Install MCP config into project directory (merge mcpServers into settings.json)
+MCP_CONFIG="$AGENT_HOME/workspace/$REPO_NAME/.claude/settings.json"
 if [[ ! -f "$MCP_CONFIG" ]]; then
     cp "$SCRIPT_DIR/mcp-config.json" "$MCP_CONFIG"
 elif ! grep -q '"mcpServers"' "$MCP_CONFIG"; then
