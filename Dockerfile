@@ -33,7 +33,7 @@ RUN curl -fsSL https://github.com/mikefarah/yq/releases/latest/download/yq_linux
     && chmod +x /usr/local/bin/yq
 
 # Playwright MCP server + browser
-RUN npm install -g playwright @anthropic-ai/mcp-server-playwright && playwright install chromium
+RUN npm install -g @playwright/mcp && npx playwright install chromium
 
 WORKDIR /workspace
 
