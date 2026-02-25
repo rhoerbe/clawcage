@@ -1,0 +1,36 @@
+# IDE
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Python
+**/__pycache__/
+*.pyc
+venv/
+.venv
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.bak
+
+# Environment files with secrets
+*.env
+!*.env.template
+!*.env.example
+.claude/settings.local.json
+
+# Application
+config.yaml
+scratch/
+tests/test_out/*
+logs/
+secrets.yaml
+home-assistant_v2.db*
+.storage/
+*.log
+/instances/local_p/custom_components/hacs/hacs_frontend/
