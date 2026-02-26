@@ -34,6 +34,17 @@ podman secret create github_token ~/.secrets/github_token
 podman secret create ha_access_token ~/.secrets/ha_access_token
 ```
 
+### "Always Latest" Startup Hook
+The container automatically updates Claude Code to the latest version on every startup. This ensures you're always
+running the most recent release without manual intervention.
+
+The update process:
+- Executes via `entrypoint.sh` before Claude Code starts
+- Uses npm cache at `/workspace/.npm` to minimize download times
+- The workspace volume persists the cache across container restarts
+
+To see the update status, watch container startup output for "Checking for Claude Code updates..."
+
 ### Run the container
 Uses `--userns=keep-id` to map host UID into container, simplifying volume permissions.
 

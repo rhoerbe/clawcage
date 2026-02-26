@@ -42,3 +42,10 @@ RUN mkdir -p /workspace/.npm && chmod 777 /workspace/.npm
 
 # MCP config template (copied to user home at runtime via --userns=keep-id)
 COPY mcp-config.json /etc/claude/mcp-config.json
+
+# Entrypoint script for "always latest" Claude Code updates
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+CMD ["claude"]
