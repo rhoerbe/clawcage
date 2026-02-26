@@ -34,6 +34,16 @@ podman secret create github_token ~/.secrets/github_token
 podman secret create ha_access_token ~/.secrets/ha_access_token
 ```
 
+### Home Directory Configuration
+The container sets `/workspace` as the home directory for the node user in `/etc/passwd`. This is critical for SSH
+client functionality because SSH reads configuration from the home directory specified in `/etc/passwd`, not from the
+`$HOME` environment variable.
+
+With this configuration:
+- SSH looks for `~/.ssh/config` at `/workspace/.ssh/config`
+- Git config, GPG keys, and other user-specific files are stored in the persisted workspace volume
+- The workspace volume mount preserves all user configuration across container restarts
+
 ### "Always Latest" Startup Hook
 The container automatically updates Claude Code to the latest version on every startup. This ensures you're always
 running the most recent release without manual intervention.

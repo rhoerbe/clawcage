@@ -37,6 +37,10 @@ RUN npm install -g @playwright/mcp && npx playwright install chromium
 
 WORKDIR /workspace
 
+# Set /workspace as home directory for node user (fixes SSH config lookup with --userns=keep-id)
+# SSH reads home from /etc/passwd, not $HOME environment variable
+RUN usermod -d /workspace node
+
 # Ensure npm cache is writable for rootless podman with --userns=keep-id
 RUN mkdir -p /workspace/.npm && chmod 777 /workspace/.npm
 
