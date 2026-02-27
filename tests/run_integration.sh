@@ -48,7 +48,7 @@ done
 # Check image exists
 if ! podman --cgroup-manager=cgroupfs image exists claude-ha-agent; then
     echo "ERROR: container image 'claude-ha-agent' not found"
-    echo "Build with: ./build.sh"
+    echo "Build with: ./containerize/build.sh"
     exit 2
 fi
 

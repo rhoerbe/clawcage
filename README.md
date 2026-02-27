@@ -1,4 +1,8 @@
 # Agent Isolation using Containers
+Constrain long-running AI agents with a least-privilege execution and network environment.
+A launcher will start podman containers with a defined policy consisting of a set of tools, access rights, keys and network connectivity.
+
+## Overview
 Agents can code, administrate, and monitor. There are multiple risks associated with having AI-agents in the team:
 1. Depending on the role, the agent may be very restricted (guardian, observer), tightly bound to a human-in-the-loop
    (think of assistants in Office software or IDE-integrations for code completion),

@@ -19,6 +19,18 @@ fi
 
 CONTAINER_NAME="claude-ha-agent"
 
+# Determine paths based on environment (development repo vs deployed agent home)
+if [[ -d "$SCRIPT_DIR/../containerize" ]]; then
+    # Development: running from repo's scripts/ directory
+    REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+    TEST_CONTAINER_SH="$REPO_ROOT/containerize/test_container.sh"
+    MCP_CONFIG_SRC="$REPO_ROOT/mcp-config.json"
+else
+    # Production: deployed to agent's home directory
+    TEST_CONTAINER_SH="$SCRIPT_DIR/test_container.sh"
+    MCP_CONFIG_SRC="$SCRIPT_DIR/mcp-config.json"
+fi
+
 # Load configuration
 source "$SCRIPT_DIR/config.sh"
 
@@ -30,20 +42,20 @@ mkdir -p "$AGENT_HOME/workspace/$REPO_NAME/.claude" "$AGENT_HOME/sessions"
 # Install MCP config into project directory (merge mcpServers into settings.json)
 MCP_CONFIG="$AGENT_HOME/workspace/$REPO_NAME/.claude/settings.json"
 if [[ ! -f "$MCP_CONFIG" ]]; then
-    cp "$SCRIPT_DIR/mcp-config.json" "$MCP_CONFIG"
+    cp "$MCP_CONFIG_SRC" "$MCP_CONFIG"
 elif ! grep -q '"mcpServers"' "$MCP_CONFIG"; then
     # Merge mcpServers into existing settings
-    jq -s '.[0] * .[1]' "$MCP_CONFIG" "$SCRIPT_DIR/mcp-config.json" > "$MCP_CONFIG.tmp" \
+    jq -s '.[0] * .[1]' "$MCP_CONFIG" "$MCP_CONFIG_SRC" > "$MCP_CONFIG.tmp" \
         && mv "$MCP_CONFIG.tmp" "$MCP_CONFIG"
 fi
 
 # Handle --test flag
 if [[ "$1" == "--test" ]]; then
-    exec "$SCRIPT_DIR/test_container.sh" all
+    exec "$TEST_CONTAINER_SH" all
 fi
 
 # Run preflight checks (exit on failure)
-"$SCRIPT_DIR/test_container.sh" preflight || exit 1
+"$TEST_CONTAINER_SH" preflight || exit 1
 
 # Load tokens for CLI tools
 GH_TOKEN=$(cat "$AGENT_HOME/workspace/.secrets/github_token")
