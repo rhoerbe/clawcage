@@ -75,6 +75,11 @@ fi
 # Remove old container if exists
 podman --cgroup-manager=cgroupfs rm -f "$CONTAINER_NAME" 2>/dev/null || true
 
+# Set default command if none provided
+if [[ $# -eq 0 ]]; then
+    set -- claude $CLAUDE_ARGS
+fi
+
 # Start container with TTY
 exec podman --cgroup-manager=cgroupfs run --rm -it \
     --name "$CONTAINER_NAME" \
@@ -92,4 +97,4 @@ exec podman --cgroup-manager=cgroupfs run --rm -it \
     -e MQTT_USER="$MQTT_USER" \
     -e MQTT_PASS="$MQTT_PASS" \
     "$CONTAINER_NAME" \
-    "${@:-claude $CLAUDE_ARGS}"
+    "$@"
