@@ -6,7 +6,10 @@ cd "$(dirname "$0")"
 
 export XDG_RUNTIME_DIR=/run/user/$(id -u)
 
-podman --cgroup-manager=cgroupfs build -t claude-ha-agent .
+# CLAUDE_CACHE_BUST forces daily re-download of Claude Code without invalidating earlier layers
+podman --cgroup-manager=cgroupfs build \
+    --build-arg CLAUDE_CACHE_BUST=$(date +%Y-%m-%d) \
+    -t claude-ha-agent .
 
 echo "Build complete. Image: localhost/claude-ha-agent:latest"
 podman --cgroup-manager=cgroupfs images claude-ha-agent
