@@ -107,9 +107,24 @@ run_python_tui() {
         py="$AGENT_HOME/.venv/bin/python"
     fi
 
-    # Run TUI and capture JSON output
+    # Run TUI - JSON output is written to a temp file
+    local tui_output_file="/tmp/launcher_tui_result.json"
+    rm -f "$tui_output_file"
+    export TUI_OUTPUT_FILE="$tui_output_file"
+
+    if ! $py "$tui_script"; then
+        return 1
+    fi
+
+    if [[ ! -f "$tui_output_file" ]]; then
+        return 1
+    fi
+
     local tui_output
-    if ! tui_output=$($py "$tui_script" 2>/dev/null); then
+    tui_output=$(cat "$tui_output_file")
+    rm -f "$tui_output_file"
+
+    if [[ -z "$tui_output" ]]; then
         return 1
     fi
 

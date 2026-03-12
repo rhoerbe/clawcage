@@ -12,12 +12,19 @@ from textual.containers import Horizontal, Vertical
 from textual.widgets import Button, Checkbox, Footer, Header, Label, Select, Static
 
 
+# Fallback MCP servers if environment variable is not set
+DEFAULT_MCP_SERVERS_CONFIG = [
+    {"name": "playwright", "package": "@playwright/mcp", "description": "Browser automation"},
+    {"name": "filesystem", "package": "@anthropic/mcp-server-filesystem", "description": "File operations"},
+    {"name": "memory", "package": "@anthropic/mcp-server-memory", "description": "Persistent memory"},
+    {"name": "fetch", "package": "@anthropic/mcp-server-fetch", "description": "HTTP fetch"},
+]
+
+
 class SecretStatus(Static):
     """Display secret file status."""
 
-    def __init__(self, name: str, description: str, present: bool) -> None:
-        self.secret_name = name
-        self.present = present
+    def __init__(self, name: str, present: bool) -> None:
         icon = "✓" if present else "✗"
         style = "green" if present else "red"
         super().__init__(f"[{style}]{icon}[/] {name}")
@@ -40,12 +47,28 @@ class LauncherApp(App):
         height: auto;
         margin-bottom: 1;
         border: solid $primary;
-        padding: 1;
+        padding: 0 1;
     }
 
-    .section-title {
-        text-style: bold;
-        margin-bottom: 1;
+    .context-line {
+        height: 1;
+        padding: 0;
+    }
+
+    .inline-row {
+        layout: horizontal;
+        height: auto;
+        align: left middle;
+    }
+
+    .inline-label {
+        width: auto;
+        padding-right: 1;
+    }
+
+    .inline-select {
+        width: 1fr;
+        max-width: 40;
     }
 
     .mcp-grid {
@@ -61,11 +84,6 @@ class LauncherApp(App):
     .secrets-grid {
         layout: horizontal;
         height: auto;
-    }
-
-    .secret-item {
-        width: auto;
-        margin-right: 3;
     }
 
     #button-row {
@@ -85,10 +103,6 @@ class LauncherApp(App):
     #exit-button {
         background: $error;
     }
-
-    Select {
-        width: 100%;
-    }
     """
 
     BINDINGS = [
@@ -105,25 +119,40 @@ class LauncherApp(App):
         yield Header(show_clock=False)
 
         with Vertical(id="main-container"):
-            # Context info
+            # Context - single compact line
             with Vertical(classes="section"):
-                yield Label("Context", classes="section-title")
-                yield Static(f"Host: {self.config['hostname']}")
-                yield Static(f"Image: {self.config['container_image']}:latest")
-                yield Static(f"Repo: {self.config['repo_name']}")
-
-            # Permission Mode
-            with Vertical(classes="section"):
-                yield Label("Permission Mode", classes="section-title")
-                yield Select(
-                    [(mode, mode) for mode in self.config["permission_modes"]],
-                    value=self.config["default_permission_mode"],
-                    id="permission-mode",
+                context_str = (
+                    f"Host: [bold]{self.config['hostname']}[/]  |  "
+                    f"Image: [bold]{self.config['container_image']}[/]  |  "
+                    f"Repo: [bold]{self.config['repo_name']}[/]"
                 )
+                yield Static(context_str, classes="context-line")
+
+            # Permission Mode + Session in one box
+            with Vertical(classes="section"):
+                with Horizontal(classes="inline-row"):
+                    yield Label("Permission:", classes="inline-label")
+                    yield Select(
+                        [(mode, mode) for mode in self.config["permission_modes"]],
+                        value=self.config["default_permission_mode"],
+                        id="permission-mode",
+                        classes="inline-select",
+                    )
+                with Horizontal(classes="inline-row"):
+                    yield Label("Session:", classes="inline-label")
+                    session_options = [("Start fresh", "new"), ("Continue last", "continue")]
+                    for sess in self.config.get("sessions", []):
+                        session_options.append((f"Resume: {sess['date']}", sess["id"]))
+                    yield Select(
+                        session_options,
+                        value="new",
+                        id="session",
+                        classes="inline-select",
+                    )
 
             # MCP Servers
             with Vertical(classes="section"):
-                yield Label("MCP Servers", classes="section-title")
+                yield Label("MCP Servers:")
                 with Horizontal(classes="mcp-grid"):
                     for server in self.config["mcp_servers"]:
                         name = server["name"]
@@ -135,28 +164,12 @@ class LauncherApp(App):
                             classes="mcp-checkbox",
                         )
 
-            # Session
-            with Vertical(classes="section"):
-                yield Label("Session", classes="section-title")
-                session_options = [("Start fresh", "new"), ("Continue last", "continue")]
-                for sess in self.config.get("sessions", []):
-                    session_options.append((f"Resume: {sess['date']}", sess["id"]))
-                yield Select(
-                    session_options,
-                    value="new",
-                    id="session",
-                )
-
             # Secrets Status
             with Vertical(classes="section"):
-                yield Label("Secrets Status", classes="section-title")
                 with Horizontal(classes="secrets-grid"):
+                    yield Label("Secrets:")
                     for secret in self.config["secrets"]:
-                        yield SecretStatus(
-                            secret["name"],
-                            secret["description"],
-                            secret["present"],
-                        )
+                        yield SecretStatus(secret["name"], secret["present"])
 
             # Buttons
             with Horizontal(id="button-row"):
@@ -226,34 +239,40 @@ def load_config() -> dict:
     permission_modes_str = os.environ.get(
         "PERMISSION_MODES", "default,acceptEdits,bypassPermissions,plan,dontAsk"
     )
-    permission_modes = permission_modes_str.split(",")
+    permission_modes = [m.strip() for m in permission_modes_str.split(",") if m.strip()]
     default_permission_mode = os.environ.get("DEFAULT_PERMISSION_MODE", "bypassPermissions")
 
-    # MCP servers from environment (format: "name:package:description,...")
+    # MCP servers from environment (format: "name:package:description|...")
     mcp_servers_str = os.environ.get("AVAILABLE_MCP_SERVERS", "")
     mcp_servers = []
-    for entry in mcp_servers_str.split("|"):
-        if entry:
-            parts = entry.split(":", 2)
-            if len(parts) >= 3:
-                mcp_servers.append({"name": parts[0], "package": parts[1], "description": parts[2]})
+    if mcp_servers_str:
+        for entry in mcp_servers_str.split("|"):
+            entry = entry.strip()
+            if entry:
+                parts = entry.split(":", 2)
+                if len(parts) >= 3:
+                    mcp_servers.append({"name": parts[0], "package": parts[1], "description": parts[2]})
+
+    # Use fallback if no servers parsed
+    if not mcp_servers:
+        mcp_servers = DEFAULT_MCP_SERVERS_CONFIG
 
     default_mcp_str = os.environ.get("DEFAULT_MCP_SERVERS", "playwright")
-    default_mcp_servers = default_mcp_str.split(",") if default_mcp_str else []
+    default_mcp_servers = [m.strip() for m in default_mcp_str.split(",") if m.strip()]
 
     # Secrets status
     secrets_dir = Path(agent_home) / "workspace" / ".secrets"
-    required_secrets_str = os.environ.get("REQUIRED_SECRETS", "")
+    required_secrets_str = os.environ.get("REQUIRED_SECRETS", "github_token|ha_access_token")
     optional_secrets_str = os.environ.get("OPTIONAL_SECRETS", "")
 
     secrets = []
     for entry in (required_secrets_str + "|" + optional_secrets_str).split("|"):
+        entry = entry.strip()
         if entry:
             parts = entry.split(":", 1)
             name = parts[0]
-            description = parts[1] if len(parts) > 1 else ""
             present = (secrets_dir / name).exists()
-            secrets.append({"name": name, "description": description, "present": present})
+            secrets.append({"name": name, "present": present})
 
     # Sessions
     sessions_dir = Path(agent_home) / "workspace" / repo_name / ".claude" / "projects"
@@ -287,7 +306,10 @@ def main() -> int:
     app.run()
 
     if app.result:
-        print(json.dumps(app.result))
+        # Write JSON to file (env var set by start_container.sh)
+        output_file = os.environ.get("TUI_OUTPUT_FILE", "/tmp/launcher_tui_result.json")
+        with open(output_file, "w") as f:
+            json.dump(app.result, f)
         return 0 if app.result.get("action") == "start" else 1
     return 1
 
