@@ -13,6 +13,7 @@ echo "Deploying scripts to $AGENT_HOME..."
 # Scripts from scripts/
 sudo cp "$SCRIPT_DIR/start_container.sh" "$AGENT_HOME/"
 sudo cp "$SCRIPT_DIR/config.sh" "$AGENT_HOME/"
+sudo cp "$SCRIPT_DIR/launcher_tui.py" "$AGENT_HOME/"
 
 # Scripts from containerize/
 sudo cp "$REPO_ROOT/containerize/test_container.sh" "$AGENT_HOME/"
@@ -22,12 +23,13 @@ sudo cp "$REPO_ROOT/containerize/mcp-config.json" "$AGENT_HOME/"
 sudo chown "$AGENT_USER:$AGENT_USER" \
     "$AGENT_HOME/start_container.sh" \
     "$AGENT_HOME/config.sh" \
+    "$AGENT_HOME/launcher_tui.py" \
     "$AGENT_HOME/test_container.sh" \
     "$AGENT_HOME/mcp-config.json"
 
-sudo chmod +x "$AGENT_HOME/start_container.sh" "$AGENT_HOME/test_container.sh"
+sudo chmod +x "$AGENT_HOME/start_container.sh" "$AGENT_HOME/test_container.sh" "$AGENT_HOME/launcher_tui.py"
 
 echo "Deployed:"
-ls -la "$AGENT_HOME"/*.sh "$AGENT_HOME"/*.json 2>/dev/null | sed 's/^/  /'
+sudo ls -la "$AGENT_HOME"/*.sh "$AGENT_HOME"/*.py "$AGENT_HOME"/*.json 2>/dev/null | sed 's/^/  /'
 
 echo "Done."

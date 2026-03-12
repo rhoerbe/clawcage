@@ -55,150 +55,80 @@ done
 # TUI Functions
 # ============================================================================
 
-show_context() {
-    local claude_args
-    claude_args=$(build_claude_args)
-    local mcp_list="${SELECTED_MCP_SERVERS[*]:-none}"
+export_config_for_tui() {
+    # Export configuration as environment variables for Python TUI
+    export AGENT_HOME
+    export REPO_NAME
+    export CONTAINER_IMAGE
 
-    echo ""
-    echo "╔══════════════════════════════════════════════════════════════════════╗"
-    echo "║             Freigang containerized agent startup                     ║"
-    echo "╠══════════════════════════════════════════════════════════════════════╣"
-    printf "║  Host:      %-57s ║\n" "$(hostname)"
-    printf "║  Image:     %-57s ║\n" "$CONTAINER_IMAGE:latest"
-    printf "║  Repo:      %-57s ║\n" "$REPO_NAME"
-    printf "║  Command:   %-57s ║\n" "claude $claude_args"
-    printf "║  MCP:       %-57s ║\n" "$mcp_list"
-    echo "╚══════════════════════════════════════════════════════════════════════╝"
-    echo ""
-}
+    # Permission modes as comma-separated
+    export PERMISSION_MODES="${PERMISSION_MODES[*]}"
+    PERMISSION_MODES="${PERMISSION_MODES// /,}"
+    export DEFAULT_PERMISSION_MODE
 
-get_session_files() {
-    local sessions_dir="$AGENT_HOME/workspace/$REPO_NAME/.claude/projects"
-    SESSION_FILES=()
-    if [[ -d "$sessions_dir" ]]; then
-        while IFS= read -r -d '' file; do
-            SESSION_FILES+=("$file")
-        done < <(find "$sessions_dir" -name "*.jsonl" -type f -print0 2>/dev/null | head -z -n 5)
-    fi
-}
-
-show_unified_form() {
-    local checklist_args=()
-    local state name package description
-
-    # ── Permission Modes (radio-style: only one should be selected) ──
-    for mode in "${PERMISSION_MODES[@]}"; do
-        if [[ "$mode" == "$SELECTED_PERMISSION_MODE" ]]; then
-            state="ON"
-        else
-            state="OFF"
-        fi
-        checklist_args+=("perm:$mode" "[Mode] $mode" "$state")
-    done
-
-    # ── MCP Servers (multi-select) ──
+    # MCP servers as pipe-separated (since entries contain colons)
+    local mcp_str=""
     for server in "${AVAILABLE_MCP_SERVERS[@]}"; do
-        IFS=':' read -r name package description <<< "$server"
-        state="OFF"
-        for enabled in "${SELECTED_MCP_SERVERS[@]}"; do
-            if [[ "$enabled" == "$name" ]]; then
-                state="ON"
-                break
-            fi
-        done
-        checklist_args+=("mcp:$name" "[MCP] $description" "$state")
+        [[ -n "$mcp_str" ]] && mcp_str+="|"
+        mcp_str+="$server"
     done
+    export AVAILABLE_MCP_SERVERS="$mcp_str"
+    export DEFAULT_MCP_SERVERS="${DEFAULT_MCP_SERVERS[*]}"
+    DEFAULT_MCP_SERVERS="${DEFAULT_MCP_SERVERS// /,}"
 
-    # ── Session Options (radio-style) ──
-    get_session_files
-
-    if [[ "$SELECTED_SESSION" == "" ]]; then
-        state="ON"
-    else
-        state="OFF"
-    fi
-    checklist_args+=("sess:new" "[Session] Start fresh" "$state")
-
-    if [[ ${#SESSION_FILES[@]} -gt 0 ]]; then
-        if [[ "$SELECTED_SESSION" == "--continue" ]]; then
-            state="ON"
-        else
-            state="OFF"
-        fi
-        checklist_args+=("sess:continue" "[Session] Continue last" "$state")
-
-        for file in "${SESSION_FILES[@]}"; do
-            local basename mtime date_str
-            basename=$(basename "$file" .jsonl)
-            mtime=$(stat -c '%Y' "$file" 2>/dev/null || echo "0")
-            date_str=$(date -d "@$mtime" '+%Y-%m-%d %H:%M' 2>/dev/null || echo "unknown")
-            if [[ "$SELECTED_SESSION" == "--resume $basename" ]]; then
-                state="ON"
-            else
-                state="OFF"
-            fi
-            checklist_args+=("sess:$basename" "[Session] Resume: $date_str" "$state")
-        done
-    fi
-
-    # ── Secrets Status (info only, always OFF) ──
+    # Secrets as pipe-separated
+    local secrets_str=""
     for secret in "${REQUIRED_SECRETS[@]}"; do
-        IFS=':' read -r name description <<< "$secret"
-        local filepath="$AGENT_HOME/workspace/.secrets/$name"
-        if [[ -f "$filepath" ]]; then
-            checklist_args+=("info:$name" "[Secret ✓] $name" "OFF")
-        else
-            checklist_args+=("info:$name" "[Secret ✗] $name MISSING" "OFF")
-        fi
+        [[ -n "$secrets_str" ]] && secrets_str+="|"
+        secrets_str+="$secret"
     done
+    export REQUIRED_SECRETS="$secrets_str"
 
-    local num_items=${#checklist_args[@]}
-    num_items=$((num_items / 3))
-    local height=$((num_items + 8))
-    [[ $height -gt 24 ]] && height=24
-
-    local selections
-    selections=$(whiptail --title "Freigang Agent Launcher" \
-        --checklist "Configure and press OK to start (Cancel to exit):" \
-        $height 70 $num_items \
-        "${checklist_args[@]}" \
-        3>&1 1>&2 2>&3) || return 1
-
-    # Parse selections
-    SELECTED_MCP_SERVERS=()
-    local new_permission_mode=""
-    local new_session=""
-
-    for sel in $selections; do
-        sel="${sel//\"/}"
-        case "$sel" in
-            perm:*)
-                new_permission_mode="${sel#perm:}"
-                ;;
-            mcp:*)
-                SELECTED_MCP_SERVERS+=("${sel#mcp:}")
-                ;;
-            sess:new)
-                new_session=""
-                ;;
-            sess:continue)
-                new_session="--continue"
-                ;;
-            sess:*)
-                new_session="--resume ${sel#sess:}"
-                ;;
-            # info: items are ignored
-        esac
+    secrets_str=""
+    for secret in "${OPTIONAL_SECRETS[@]}"; do
+        [[ -n "$secrets_str" ]] && secrets_str+="|"
+        secrets_str+="$secret"
     done
+    export OPTIONAL_SECRETS="$secrets_str"
+}
 
-    # Apply permission mode (use last selected, or keep current if none)
-    if [[ -n "$new_permission_mode" ]]; then
-        SELECTED_PERMISSION_MODE="$new_permission_mode"
+run_python_tui() {
+    export_config_for_tui
+
+    local tui_script="$SCRIPT_DIR/launcher_tui.py"
+    if [[ ! -f "$tui_script" ]]; then
+        echo "Error: TUI script not found: $tui_script" >&2
+        return 1
     fi
 
-    # Apply session selection
-    SELECTED_SESSION="$new_session"
+    # Use venv python if available
+    local py="python3"
+    if [[ -x "$AGENT_HOME/.venv/bin/python" ]]; then
+        py="$AGENT_HOME/.venv/bin/python"
+    fi
+
+    # Run TUI and capture JSON output
+    local tui_output
+    if ! tui_output=$($py "$tui_script" 2>/dev/null); then
+        return 1
+    fi
+
+    # Parse JSON output using python
+    local action permission_mode mcp_servers session_arg
+    action=$(echo "$tui_output" | $py -c "import sys, json; d=json.load(sys.stdin); print(d.get('action', ''))")
+
+    if [[ "$action" != "start" ]]; then
+        return 1
+    fi
+
+    permission_mode=$(echo "$tui_output" | $py -c "import sys, json; d=json.load(sys.stdin); print(d.get('permission_mode', ''))")
+    mcp_servers=$(echo "$tui_output" | $py -c "import sys, json; d=json.load(sys.stdin); print(','.join(d.get('mcp_servers', [])))")
+    session_arg=$(echo "$tui_output" | $py -c "import sys, json; d=json.load(sys.stdin); print(d.get('session_arg', ''))")
+
+    # Apply selections
+    SELECTED_PERMISSION_MODE="$permission_mode"
+    IFS=',' read -ra SELECTED_MCP_SERVERS <<< "$mcp_servers"
+    SELECTED_SESSION="$session_arg"
 
     return 0
 }
@@ -264,14 +194,10 @@ show_final_command() {
 }
 
 run_tui() {
-    clear
-    show_context
-
-    if ! show_unified_form; then
+    if ! run_python_tui; then
         echo "Cancelled."
         exit 0
     fi
-
     return 0
 }
 
@@ -334,9 +260,14 @@ fi
 
 # Run TUI if not skipped
 if [[ "$SKIP_TUI" == false ]]; then
-    # Check if whiptail is available
-    if ! command -v whiptail &> /dev/null; then
-        echo "Warning: whiptail not found, using default settings"
+    # Check if Python TUI dependencies are available (prefer venv)
+    PYTHON_CMD="python3"
+    if [[ -x "$AGENT_HOME/.venv/bin/python" ]]; then
+        PYTHON_CMD="$AGENT_HOME/.venv/bin/python"
+    fi
+    if ! $PYTHON_CMD -c "import textual" &> /dev/null; then
+        echo "Warning: textual not installed, using default settings"
+        echo "Install with: python3 -m venv ~/.venv && ~/.venv/bin/pip install textual"
         SKIP_TUI=true
     else
         run_tui
