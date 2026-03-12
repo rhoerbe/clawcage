@@ -15,15 +15,8 @@ PERMISSION_MODES=(
     "dontAsk"
 )
 
-# Available MCP servers: "name:package:description"
-AVAILABLE_MCP_SERVERS=(
-    "playwright:@playwright/mcp:Browser automation and testing"
-    "filesystem:@anthropic/mcp-server-filesystem:File system operations"
-    "memory:@anthropic/mcp-server-memory:Persistent memory storage"
-    "fetch:@anthropic/mcp-server-fetch:HTTP fetch operations"
-)
-
-# Default enabled MCP servers
+# MCP servers are defined in containerize/mcp-manifest.json
+# Default enabled MCP servers (must be listed in manifest as "installed")
 DEFAULT_MCP_SERVERS=("playwright")
 
 # Required secrets (name:description)

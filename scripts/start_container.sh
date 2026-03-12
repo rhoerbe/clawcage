@@ -66,13 +66,13 @@ export_config_for_tui() {
     PERMISSION_MODES="${PERMISSION_MODES// /,}"
     export DEFAULT_PERMISSION_MODE
 
-    # MCP servers as pipe-separated (since entries contain colons)
-    local mcp_str=""
-    for server in "${AVAILABLE_MCP_SERVERS[@]}"; do
-        [[ -n "$mcp_str" ]] && mcp_str+="|"
-        mcp_str+="$server"
-    done
-    export AVAILABLE_MCP_SERVERS="$mcp_str"
+    # MCP manifest path
+    if [[ -f "$SCRIPT_DIR/../containerize/mcp-manifest.json" ]]; then
+        export MCP_MANIFEST_PATH="$SCRIPT_DIR/../containerize/mcp-manifest.json"
+    elif [[ -f "$SCRIPT_DIR/mcp-manifest.json" ]]; then
+        export MCP_MANIFEST_PATH="$SCRIPT_DIR/mcp-manifest.json"
+    fi
+
     export DEFAULT_MCP_SERVERS="${DEFAULT_MCP_SERVERS[*]}"
     DEFAULT_MCP_SERVERS="${DEFAULT_MCP_SERVERS// /,}"
 

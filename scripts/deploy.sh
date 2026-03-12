@@ -18,6 +18,7 @@ sudo cp "$SCRIPT_DIR/launcher_tui.py" "$AGENT_HOME/"
 # Scripts from containerize/
 sudo cp "$REPO_ROOT/containerize/test_container.sh" "$AGENT_HOME/"
 sudo cp "$REPO_ROOT/containerize/mcp-config.json" "$AGENT_HOME/"
+sudo cp "$REPO_ROOT/containerize/mcp-manifest.json" "$AGENT_HOME/"
 
 # Set ownership and permissions
 sudo chown "$AGENT_USER:$AGENT_USER" \
@@ -25,7 +26,8 @@ sudo chown "$AGENT_USER:$AGENT_USER" \
     "$AGENT_HOME/config.sh" \
     "$AGENT_HOME/launcher_tui.py" \
     "$AGENT_HOME/test_container.sh" \
-    "$AGENT_HOME/mcp-config.json"
+    "$AGENT_HOME/mcp-config.json" \
+    "$AGENT_HOME/mcp-manifest.json"
 
 sudo chmod +x "$AGENT_HOME/start_container.sh" "$AGENT_HOME/test_container.sh" "$AGENT_HOME/launcher_tui.py"
 

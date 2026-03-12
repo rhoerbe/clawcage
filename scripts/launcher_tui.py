@@ -12,13 +12,13 @@ from textual.containers import Horizontal, Vertical
 from textual.widgets import Button, Checkbox, Footer, Header, Label, Select, Static
 
 
-# Fallback MCP servers if environment variable is not set
-DEFAULT_MCP_SERVERS_CONFIG = [
-    {"name": "playwright", "package": "@playwright/mcp", "description": "Browser automation"},
-    {"name": "filesystem", "package": "@anthropic/mcp-server-filesystem", "description": "File operations"},
-    {"name": "memory", "package": "@anthropic/mcp-server-memory", "description": "Persistent memory"},
-    {"name": "fetch", "package": "@anthropic/mcp-server-fetch", "description": "HTTP fetch"},
-]
+# Fallback MCP servers if manifest not found
+DEFAULT_MCP_MANIFEST = {
+    "installed": [
+        {"name": "playwright", "package": "@playwright/mcp", "description": "Browser automation"}
+    ],
+    "external": []
+}
 
 
 class SecretStatus(Static):
@@ -150,11 +150,11 @@ class LauncherApp(App):
                         classes="inline-select",
                     )
 
-            # MCP Servers
+            # MCP Servers (Installed in container)
             with Vertical(classes="section"):
-                yield Label("MCP Servers:")
+                yield Label("MCP Servers (Container):")
                 with Horizontal(classes="mcp-grid"):
-                    for server in self.config["mcp_servers"]:
+                    for server in self.config["mcp_installed"]:
                         name = server["name"]
                         enabled = name in self.config["default_mcp_servers"]
                         yield Checkbox(
@@ -163,6 +163,24 @@ class LauncherApp(App):
                             id=f"mcp-{name}",
                             classes="mcp-checkbox",
                         )
+
+            # MCP Servers (External - require auth)
+            if self.config["mcp_external"]:
+                with Vertical(classes="section"):
+                    yield Label("MCP Servers (External):")
+                    with Horizontal(classes="mcp-grid"):
+                        for server in self.config["mcp_external"]:
+                            name = server["name"]
+                            auth = server.get("auth", "")
+                            desc = server["description"]
+                            if auth == "oauth":
+                                desc = f"{desc} [dim](needs auth)[/]"
+                            yield Checkbox(
+                                desc,
+                                value=False,
+                                id=f"mcp-ext-{name}",
+                                classes="mcp-checkbox",
+                            )
 
             # Secrets Status
             with Vertical(classes="section"):
@@ -202,12 +220,22 @@ class LauncherApp(App):
         permission_select = self.query_one("#permission-mode", Select)
         permission_mode = permission_select.value
 
-        # Collect MCP servers
+        # Collect MCP servers (installed)
         mcp_servers = []
-        for server in self.config["mcp_servers"]:
+        for server in self.config["mcp_installed"]:
             checkbox = self.query_one(f"#mcp-{server['name']}", Checkbox)
             if checkbox.value:
                 mcp_servers.append(server["name"])
+
+        # Collect MCP servers (external)
+        mcp_external = []
+        for server in self.config["mcp_external"]:
+            try:
+                checkbox = self.query_one(f"#mcp-ext-{server['name']}", Checkbox)
+                if checkbox.value:
+                    mcp_external.append(server["name"])
+            except Exception:
+                pass
 
         # Collect session
         session_select = self.query_one("#session", Select)
@@ -224,6 +252,7 @@ class LauncherApp(App):
             "action": "start",
             "permission_mode": permission_mode,
             "mcp_servers": mcp_servers,
+            "mcp_external": mcp_external,
             "session_arg": session_arg,
         }
         self.exit()
@@ -242,20 +271,19 @@ def load_config() -> dict:
     permission_modes = [m.strip() for m in permission_modes_str.split(",") if m.strip()]
     default_permission_mode = os.environ.get("DEFAULT_PERMISSION_MODE", "bypassPermissions")
 
-    # MCP servers from environment (format: "name:package:description|...")
-    mcp_servers_str = os.environ.get("AVAILABLE_MCP_SERVERS", "")
-    mcp_servers = []
-    if mcp_servers_str:
-        for entry in mcp_servers_str.split("|"):
-            entry = entry.strip()
-            if entry:
-                parts = entry.split(":", 2)
-                if len(parts) >= 3:
-                    mcp_servers.append({"name": parts[0], "package": parts[1], "description": parts[2]})
+    # Load MCP manifest
+    manifest_path = os.environ.get("MCP_MANIFEST_PATH", "")
+    mcp_manifest = DEFAULT_MCP_MANIFEST.copy()
 
-    # Use fallback if no servers parsed
-    if not mcp_servers:
-        mcp_servers = DEFAULT_MCP_SERVERS_CONFIG
+    if manifest_path and Path(manifest_path).exists():
+        try:
+            with open(manifest_path) as f:
+                mcp_manifest = json.load(f)
+        except (json.JSONDecodeError, IOError):
+            pass
+
+    mcp_installed = mcp_manifest.get("installed", [])
+    mcp_external = mcp_manifest.get("external", [])
 
     default_mcp_str = os.environ.get("DEFAULT_MCP_SERVERS", "playwright")
     default_mcp_servers = [m.strip() for m in default_mcp_str.split(",") if m.strip()]
@@ -292,7 +320,8 @@ def load_config() -> dict:
         "repo_name": repo_name,
         "permission_modes": permission_modes,
         "default_permission_mode": default_permission_mode,
-        "mcp_servers": mcp_servers,
+        "mcp_installed": mcp_installed,
+        "mcp_external": mcp_external,
         "default_mcp_servers": default_mcp_servers,
         "secrets": secrets,
         "sessions": sessions,
