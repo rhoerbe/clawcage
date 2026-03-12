@@ -38,6 +38,7 @@ CONTAINER_NAME="$CONTAINER_IMAGE"
 # TUI state variables
 SELECTED_PERMISSION_MODE="$DEFAULT_PERMISSION_MODE"
 SELECTED_MCP_SERVERS=("${DEFAULT_MCP_SERVERS[@]}")
+SELECTED_SECRETS=("github_token")  # Default: only github_token on first start
 SELECTED_SESSION=""
 SKIP_TUI=false
 
@@ -55,6 +56,19 @@ done
 # TUI Functions
 # ============================================================================
 
+get_mcp_manifest_from_container() {
+    # Query MCP manifest embedded in the container image
+    # This provides the authoritative list of MCP servers installed in the container
+    local manifest_file="$AGENT_HOME/.cache/freigang/container-mcp-manifest.json"
+    mkdir -p "$(dirname "$manifest_file")"
+
+    if podman --cgroup-manager=cgroupfs run --rm "$CONTAINER_IMAGE" cat /etc/freigang/mcp-manifest.json > "$manifest_file" 2>/dev/null; then
+        echo "$manifest_file"
+    else
+        echo ""
+    fi
+}
+
 export_config_for_tui() {
     # Export configuration as environment variables for Python TUI
     export AGENT_HOME
@@ -66,30 +80,30 @@ export_config_for_tui() {
     PERMISSION_MODES="${PERMISSION_MODES// /,}"
     export DEFAULT_PERMISSION_MODE
 
-    # MCP manifest path
-    if [[ -f "$SCRIPT_DIR/../containerize/mcp-manifest.json" ]]; then
+    # MCP manifest path - prefer container-embedded manifest, fallback to local files
+    local container_manifest
+    container_manifest=$(get_mcp_manifest_from_container)
+    if [[ -n "$container_manifest" && -f "$container_manifest" ]]; then
+        export MCP_MANIFEST_PATH="$container_manifest"
+    elif [[ -f "$SCRIPT_DIR/../containerize/mcp-manifest.json" ]]; then
         export MCP_MANIFEST_PATH="$SCRIPT_DIR/../containerize/mcp-manifest.json"
     elif [[ -f "$SCRIPT_DIR/mcp-manifest.json" ]]; then
         export MCP_MANIFEST_PATH="$SCRIPT_DIR/mcp-manifest.json"
     fi
 
+    # User preferences path for persistence
+    export LAUNCHER_PREFS_PATH="$AGENT_HOME/workspace/$REPO_NAME/.claude/launcher_preferences.json"
+
     export DEFAULT_MCP_SERVERS="${DEFAULT_MCP_SERVERS[*]}"
     DEFAULT_MCP_SERVERS="${DEFAULT_MCP_SERVERS// /,}"
 
-    # Secrets as pipe-separated
+    # Selectable secrets as pipe-separated (shown in TUI)
     local secrets_str=""
-    for secret in "${REQUIRED_SECRETS[@]}"; do
+    for secret in "${SELECTABLE_SECRETS[@]}"; do
         [[ -n "$secrets_str" ]] && secrets_str+="|"
         secrets_str+="$secret"
     done
-    export REQUIRED_SECRETS="$secrets_str"
-
-    secrets_str=""
-    for secret in "${OPTIONAL_SECRETS[@]}"; do
-        [[ -n "$secrets_str" ]] && secrets_str+="|"
-        secrets_str+="$secret"
-    done
-    export OPTIONAL_SECRETS="$secrets_str"
+    export SELECTABLE_SECRETS="$secrets_str"
 }
 
 run_python_tui() {
@@ -138,11 +152,13 @@ run_python_tui() {
 
     permission_mode=$(echo "$tui_output" | $py -c "import sys, json; d=json.load(sys.stdin); print(d.get('permission_mode', ''))")
     mcp_servers=$(echo "$tui_output" | $py -c "import sys, json; d=json.load(sys.stdin); print(','.join(d.get('mcp_servers', [])))")
+    secrets=$(echo "$tui_output" | $py -c "import sys, json; d=json.load(sys.stdin); print(','.join(d.get('secrets', [])))")
     session_arg=$(echo "$tui_output" | $py -c "import sys, json; d=json.load(sys.stdin); print(d.get('session_arg', ''))")
 
     # Apply selections
     SELECTED_PERMISSION_MODE="$permission_mode"
     IFS=',' read -ra SELECTED_MCP_SERVERS <<< "$mcp_servers"
+    IFS=',' read -ra SELECTED_SECRETS <<< "$secrets"
     SELECTED_SESSION="$session_arg"
 
     return 0
@@ -205,6 +221,7 @@ show_final_command() {
     echo "  claude $claude_args"
     echo ""
     echo "MCP Servers enabled: ${SELECTED_MCP_SERVERS[*]:-none}"
+    echo "Secrets enabled: ${SELECTED_SECRETS[*]:-none}"
     echo ""
 }
 
@@ -233,23 +250,42 @@ fi
 # Run preflight checks (exit on failure)
 "$TEST_CONTAINER_SH" preflight || exit 1
 
-# Load tokens for CLI tools
-GH_TOKEN=$(cat "$AGENT_HOME/workspace/.secrets/github_token")
-# ANTHROPIC_API_KEY=$(cat "$AGENT_HOME/workspace/.secrets/anthropic_api_key")  # using OAuth token instead
-HA_ACCESS_TOKEN=$(cat "$AGENT_HOME/workspace/.secrets/ha_access_token")
+# Helper function to check if a secret is selected
+is_secret_selected() {
+    local secret_name="$1"
+    for s in "${SELECTED_SECRETS[@]}"; do
+        [[ "$s" == "$secret_name" ]] && return 0
+    done
+    return 1
+}
 
-# MQTT credentials (optional - create files if MQTT debugging is needed)
-MQTT_USER=""
-MQTT_PASS=""
-if [[ -f "$AGENT_HOME/workspace/.secrets/mqtt_username" ]]; then
-    MQTT_USER=$(cat "$AGENT_HOME/workspace/.secrets/mqtt_username")
-fi
-if [[ -f "$AGENT_HOME/workspace/.secrets/mqtt_password" ]]; then
-    MQTT_PASS=$(cat "$AGENT_HOME/workspace/.secrets/mqtt_password")
-fi
+# Load secrets based on selection (populated after TUI runs, but need defaults for --quick mode)
+load_selected_secrets() {
+    # Selectable secrets - only loaded if selected in TUI
+    GH_TOKEN=""
+    MQTT_USER=""
+    MQTT_PASS=""
+
+    if is_secret_selected "github_token" && [[ -f "$AGENT_HOME/workspace/.secrets/github_token" ]]; then
+        GH_TOKEN=$(cat "$AGENT_HOME/workspace/.secrets/github_token")
+    fi
+
+
+    if is_secret_selected "mqtt_username" && [[ -f "$AGENT_HOME/workspace/.secrets/mqtt_username" ]]; then
+        MQTT_USER=$(cat "$AGENT_HOME/workspace/.secrets/mqtt_username")
+    fi
+
+    if is_secret_selected "mqtt_password" && [[ -f "$AGENT_HOME/workspace/.secrets/mqtt_password" ]]; then
+        MQTT_PASS=$(cat "$AGENT_HOME/workspace/.secrets/mqtt_password")
+    fi
+}
 
 # Handle direct command execution (e.g., "start-ha-agent bash")
 if [[ $# -gt 0 && "$1" != "--"* ]]; then
+    # For direct commands, load all available secrets (bypass TUI selection)
+    SELECTED_SECRETS=("github_token" "mqtt_username" "mqtt_password")
+    load_selected_secrets
+
     # Remove old container if exists
     podman --cgroup-manager=cgroupfs rm -f "$CONTAINER_NAME" 2>/dev/null || true
 
@@ -265,9 +301,8 @@ if [[ $# -gt 0 && "$1" != "--"* ]]; then
         -e HTTPS_PROXY=http://host.containers.internal:8888 \
         -e NO_PROXY="api.anthropic.com,claude.ai,platform.claude.com,anthropic.com" \
         -e HOME=/workspace \
-        -e GH_TOKEN="$GH_TOKEN" \
-        -e HA_ACCESS_TOKEN="$HA_ACCESS_TOKEN" \
-        -e MQTT_USER="$MQTT_USER" \
+                -e GH_TOKEN="$GH_TOKEN" \
+                -e MQTT_USER="$MQTT_USER" \
         -e MQTT_PASS="$MQTT_PASS" \
         "$CONTAINER_NAME" \
         "$@"
@@ -288,6 +323,9 @@ if [[ "$SKIP_TUI" == false ]]; then
         run_tui
     fi
 fi
+
+# Load secrets based on TUI selection (or defaults if TUI was skipped)
+load_selected_secrets
 
 # Build MCP config from selections
 build_mcp_config
@@ -313,9 +351,8 @@ exec podman --cgroup-manager=cgroupfs run --rm -it \
     -e HTTPS_PROXY=http://host.containers.internal:8888 \
     -e NO_PROXY="api.anthropic.com,claude.ai,platform.claude.com,anthropic.com" \
     -e HOME=/workspace \
-    -e GH_TOKEN="$GH_TOKEN" \
-    -e HA_ACCESS_TOKEN="$HA_ACCESS_TOKEN" \
-    -e MQTT_USER="$MQTT_USER" \
+        -e GH_TOKEN="$GH_TOKEN" \
+        -e MQTT_USER="$MQTT_USER" \
     -e MQTT_PASS="$MQTT_PASS" \
     "$CONTAINER_NAME" \
     claude $CLAUDE_ARGS

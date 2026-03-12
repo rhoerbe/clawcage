@@ -20,14 +20,19 @@ DEFAULT_MCP_MANIFEST = {
     "external": []
 }
 
+# All MCP servers off by default on first start (filesystem access is always on via Claude Code itself)
+DEFAULT_MCP_ENABLED: list[str] = []
 
-class SecretStatus(Static):
-    """Display secret file status."""
 
-    def __init__(self, name: str, present: bool) -> None:
-        icon = "✓" if present else "✗"
-        style = "green" if present else "red"
-        super().__init__(f"[{style}]{icon}[/] {name}")
+class SecretCheckbox(Checkbox):
+    """Checkbox for secret selection with availability indicator."""
+
+    def __init__(self, name: str, present: bool, enabled: bool) -> None:
+        # Show availability status in the label
+        status = "[green]✓[/]" if present else "[red]✗[/]"
+        label = f"{status} {name}"
+        # Only enable checkbox if secret file exists
+        super().__init__(label, value=enabled and present, disabled=not present, id=f"secret-{name}", classes="mcp-checkbox")
 
 
 class LauncherApp(App):
@@ -132,7 +137,7 @@ class LauncherApp(App):
                 )
                 yield Static(context_str, classes="context-line")
 
-            # Permission Mode + Session in one box
+            # Permission Mode + Session on same line
             with Vertical(classes="section"):
                 with Horizontal(classes="inline-row"):
                     yield Label("Permission:", classes="inline-label")
@@ -142,7 +147,6 @@ class LauncherApp(App):
                         id="permission-mode",
                         classes="inline-select",
                     )
-                with Horizontal(classes="inline-row"):
                     yield Label("Session:", classes="inline-label")
                     session_options = [("Start fresh", "new"), ("Continue last", "continue")]
                     for sess in self.config.get("sessions", []):
@@ -154,10 +158,11 @@ class LauncherApp(App):
                         classes="inline-select",
                     )
 
-            # MCP Servers (Installed in container)
+            # MCP Servers (all in one section)
             with Vertical(classes="section"):
-                yield Label("MCP Servers (Container):")
+                yield Label("MCP Servers:")
                 with Horizontal(classes="mcp-grid"):
+                    # Installed servers (in container)
                     for server in self.config["mcp_installed"]:
                         name = server["name"]
                         enabled = name in self.config["default_mcp_servers"]
@@ -167,31 +172,30 @@ class LauncherApp(App):
                             id=f"mcp-{name}",
                             classes="mcp-checkbox",
                         )
+                    # External servers (require auth)
+                    for server in self.config["mcp_external"]:
+                        name = server["name"]
+                        auth = server.get("auth", "")
+                        desc = server["description"]
+                        if auth == "oauth":
+                            desc = f"{desc} [dim](oauth)[/]"
+                        enabled = name in self.config.get("default_mcp_external", [])
+                        yield Checkbox(
+                            desc,
+                            value=enabled,
+                            id=f"mcp-ext-{name}",
+                            classes="mcp-checkbox",
+                        )
 
-            # MCP Servers (External - require auth)
-            if self.config["mcp_external"]:
-                with Vertical(classes="section"):
-                    yield Label("MCP Servers (External):")
-                    with Horizontal(classes="mcp-grid"):
-                        for server in self.config["mcp_external"]:
-                            name = server["name"]
-                            auth = server.get("auth", "")
-                            desc = server["description"]
-                            if auth == "oauth":
-                                desc = f"{desc} [dim](needs auth)[/]"
-                            yield Checkbox(
-                                desc,
-                                value=False,
-                                id=f"mcp-ext-{name}",
-                                classes="mcp-checkbox",
-                            )
-
-            # Secrets Status
+            # Secrets (selectable - only available secrets can be enabled)
             with Vertical(classes="section"):
-                with Horizontal(classes="secrets-grid"):
-                    yield Label("Secrets:")
+                yield Label("Secrets (pass to container):")
+                with Horizontal(classes="mcp-grid"):
                     for secret in self.config["secrets"]:
-                        yield SecretStatus(secret["name"], secret["present"])
+                        name = secret["name"]
+                        present = secret["present"]
+                        enabled = name in self.config.get("default_secrets", [])
+                        yield SecretCheckbox(name, present, enabled)
                     if not self.config["secrets"]:
                         yield Static("[dim]No secrets configured[/]")
 
@@ -243,6 +247,16 @@ class LauncherApp(App):
             except Exception:
                 pass
 
+        # Collect secrets
+        secrets = []
+        for secret in self.config["secrets"]:
+            try:
+                checkbox = self.query_one(f"#secret-{secret['name']}", Checkbox)
+                if checkbox.value:
+                    secrets.append(secret["name"])
+            except Exception:
+                pass
+
         # Collect session
         session_select = self.query_one("#session", Select)
         session_value = session_select.value
@@ -259,23 +273,47 @@ class LauncherApp(App):
             "permission_mode": permission_mode,
             "mcp_servers": mcp_servers,
             "mcp_external": mcp_external,
+            "secrets": secrets,
             "session_arg": session_arg,
         }
         self.exit()
 
 
+def load_user_preferences(prefs_path: Path) -> dict:
+    """Load user preferences from file. Returns empty dict if file doesn't exist."""
+    if prefs_path.exists():
+        try:
+            with open(prefs_path) as f:
+                return json.load(f)
+        except (json.JSONDecodeError, IOError):
+            pass
+    return {}
+
+
+def save_user_preferences(prefs_path: Path, prefs: dict) -> None:
+    """Save user preferences to file."""
+    prefs_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(prefs_path, "w") as f:
+        json.dump(prefs, f, indent=2)
+
+
 def load_config() -> dict:
-    """Load configuration from environment and filesystem."""
+    """Load configuration from environment, filesystem, and user preferences."""
     agent_home = os.environ.get("AGENT_HOME", "/home/ha_agent")
     repo_name = os.environ.get("REPO_NAME", "hadmin")
     container_image = os.environ.get("CONTAINER_IMAGE", "claude-ha-agent")
+
+    # User preferences path
+    prefs_path = Path(os.environ.get("LAUNCHER_PREFS_PATH", f"{agent_home}/workspace/{repo_name}/.claude/launcher_preferences.json"))
+    user_prefs = load_user_preferences(prefs_path)
 
     # Permission modes
     permission_modes_str = os.environ.get(
         "PERMISSION_MODES", "default,acceptEdits,bypassPermissions,plan,dontAsk"
     )
     permission_modes = [m.strip() for m in permission_modes_str.split(",") if m.strip()]
-    default_permission_mode = os.environ.get("DEFAULT_PERMISSION_MODE", "bypassPermissions")
+    # Use saved preference or fall back to config default
+    default_permission_mode = user_prefs.get("permission_mode", os.environ.get("DEFAULT_PERMISSION_MODE", "bypassPermissions"))
 
     # Load MCP manifest
     manifest_path = os.environ.get("MCP_MANIFEST_PATH", "")
@@ -291,22 +329,31 @@ def load_config() -> dict:
     mcp_installed = mcp_manifest.get("installed", [])
     mcp_external = mcp_manifest.get("external", [])
 
-    default_mcp_str = os.environ.get("DEFAULT_MCP_SERVERS", "playwright")
-    default_mcp_servers = [m.strip() for m in default_mcp_str.split(",") if m.strip()]
+    # Use saved MCP selections or fall back to config defaults (empty = all off on first start)
+    if "mcp_servers" in user_prefs:
+        default_mcp_servers = user_prefs["mcp_servers"]
+    else:
+        default_mcp_str = os.environ.get("DEFAULT_MCP_SERVERS", "")
+        default_mcp_servers = [m.strip() for m in default_mcp_str.split(",") if m.strip()] if default_mcp_str else DEFAULT_MCP_ENABLED
 
-    # Secrets status
+    # External MCP servers from preferences
+    default_mcp_external = user_prefs.get("mcp_external", [])
+
+    # Selectable secrets (shown in TUI for user selection)
     secrets_dir = Path(agent_home) / "workspace" / ".secrets"
-    required_secrets_str = os.environ.get("REQUIRED_SECRETS", "github_token|ha_access_token")
-    optional_secrets_str = os.environ.get("OPTIONAL_SECRETS", "")
+    selectable_secrets_str = os.environ.get("SELECTABLE_SECRETS", "github_token:GitHub token|mqtt_username:MQTT user|mqtt_password:MQTT pass")
 
     secrets = []
-    for entry in (required_secrets_str + "|" + optional_secrets_str).split("|"):
+    for entry in selectable_secrets_str.split("|"):
         entry = entry.strip()
         if entry:
             parts = entry.split(":", 1)
             name = parts[0]
             present = (secrets_dir / name).exists()
             secrets.append({"name": name, "present": present})
+
+    # Default secrets from preferences (only github_token enabled by default on first start)
+    default_secrets = user_prefs.get("secrets", ["github_token"])
 
     # Sessions
     sessions_dir = Path(agent_home) / "workspace" / repo_name / ".claude" / "projects"
@@ -329,8 +376,11 @@ def load_config() -> dict:
         "mcp_installed": mcp_installed,
         "mcp_external": mcp_external,
         "default_mcp_servers": default_mcp_servers,
+        "default_mcp_external": default_mcp_external,
         "secrets": secrets,
+        "default_secrets": default_secrets,
         "sessions": sessions,
+        "prefs_path": prefs_path,
     }
 
 
@@ -345,6 +395,17 @@ def main() -> int:
         output_file = os.environ.get("TUI_OUTPUT_FILE", "/tmp/launcher_tui_result.json")
         with open(output_file, "w") as f:
             json.dump(app.result, f)
+
+        # Save user preferences for next invocation (only on successful start)
+        if app.result.get("action") == "start":
+            prefs = {
+                "permission_mode": app.result.get("permission_mode"),
+                "mcp_servers": app.result.get("mcp_servers", []),
+                "mcp_external": app.result.get("mcp_external", []),
+                "secrets": app.result.get("secrets", []),
+            }
+            save_user_preferences(config["prefs_path"], prefs)
+
         return 0 if app.result.get("action") == "start" else 1
     return 1
 

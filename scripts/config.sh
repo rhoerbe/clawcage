@@ -15,19 +15,15 @@ PERMISSION_MODES=(
     "dontAsk"
 )
 
-# MCP servers are defined in containerize/mcp-manifest.json
+# MCP servers are defined in containerize/mcp-manifest.json (or /etc/freigang/mcp-manifest.json in container)
 # Default enabled MCP servers (must be listed in manifest as "installed")
-DEFAULT_MCP_SERVERS=("playwright")
+# NOTE: All MCP servers are OFF by default on first start. Filesystem access is always on via Claude Code itself.
+# User preferences are persisted in $AGENT_HOME/workspace/$REPO_NAME/.claude/launcher_preferences.json
+DEFAULT_MCP_SERVERS=()
 
-# Required secrets (name:description)
-REQUIRED_SECRETS=(
-    "github_token:GitHub personal access token"
-    "ha_access_token:Home Assistant access token"
-)
-
-# Optional secrets
-OPTIONAL_SECRETS=(
-    "anthropic_api_key:Anthropic API key (alternative to OAuth)"
-    "mqtt_username:MQTT broker username"
-    "mqtt_password:MQTT broker password"
+# Selectable secrets - shown in TUI for user selection
+SELECTABLE_SECRETS=(
+    "github_token:GitHub token"
+    "mqtt_username:MQTT user"
+    "mqtt_password:MQTT pass"
 )

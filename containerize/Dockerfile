@@ -47,6 +47,10 @@ RUN mkdir -p /workspace/.npm && chmod 777 /workspace/.npm
 # MCP config template (copied to user home at runtime via --userns=keep-id)
 COPY mcp-config.json /etc/claude/mcp-config.json
 
+# MCP manifest - lists available MCP servers in this container image
+# Can be queried by startup script: podman run --rm $IMAGE cat /etc/freigang/mcp-manifest.json
+COPY mcp-manifest.json /etc/freigang/mcp-manifest.json
+
 # Entrypoint script for "always latest" Claude Code updates
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
