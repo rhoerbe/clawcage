@@ -2,9 +2,5 @@
   "installed": [
     {"name": "playwright", "package": "@playwright/mcp", "description": "Browser automation"}
   ],
-  "external": [
-    {"name": "gmail", "provider": "claude.ai", "description": "Gmail", "auth": "oauth"},
-    {"name": "google-calendar", "provider": "claude.ai", "description": "Google Calendar", "auth": "oauth"},
-    {"name": "google-drive", "provider": "claude.ai", "description": "Google Drive", "auth": "oauth"}
-  ]
+  "external": []
 }

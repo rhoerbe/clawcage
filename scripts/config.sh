@@ -24,6 +24,7 @@ DEFAULT_MCP_SERVERS=()
 # Selectable secrets - shown in TUI for user selection
 SELECTABLE_SECRETS=(
     "github_token:GitHub token"
+    "ha_access_token:HA token"
     "mqtt_username:MQTT user"
     "mqtt_password:MQTT pass"
 )

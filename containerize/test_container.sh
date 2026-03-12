@@ -10,7 +10,7 @@ AGENT_HOME="/home/ha_agent"
 CONTAINER_NAME="claude-ha-agent"
 
 run_preflight_checks() {
-    echo "Preflight checks..."
+    echo -n "Preflight checks... "
 
     podman --cgroup-manager=cgroupfs network exists ha-agent-net 2>/dev/null || \
         { echo "ERROR: network 'ha-agent-net' not found"; exit 1; }
@@ -24,7 +24,7 @@ run_preflight_checks() {
     done
     # anthropic_api_key check removed - using OAuth token instead
 
-    echo "Preflight checks passed."
+    echo "passed"
 }
 
 run_network_tests() {

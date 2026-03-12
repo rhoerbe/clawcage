@@ -24,6 +24,76 @@ DEFAULT_MCP_MANIFEST = {
 DEFAULT_MCP_ENABLED: list[str] = []
 
 
+def load_claude_settings(settings_path: Path) -> dict:
+    """Load Claude's settings.json, returns empty dict if not found."""
+    if settings_path.exists():
+        try:
+            with open(settings_path) as f:
+                return json.load(f)
+        except (json.JSONDecodeError, IOError):
+            pass
+    return {}
+
+
+def save_claude_settings(settings_path: Path, settings: dict) -> None:
+    """Save Claude's settings.json, preserving other settings."""
+    settings_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(settings_path, "w") as f:
+        json.dump(settings, f, indent=2)
+
+
+def get_enabled_mcp_servers(claude_settings: dict, project_path: str) -> set[str]:
+    """Extract enabled MCP server names from Claude's project config."""
+    # Format: {"projects": {"<path>": {"mcpServers": {"name": {...}}}}}
+    project = claude_settings.get("projects", {}).get(project_path, {})
+    return set(project.get("mcpServers", {}).keys())
+
+
+def update_mcp_in_settings(claude_settings: dict, project_path: str, selected_servers: list[dict], manifest_servers: list[dict]) -> dict:
+    """Update Claude's project mcpServers config based on TUI selection.
+
+    Args:
+        claude_settings: Current ~/.claude.json content
+        project_path: Container project path (e.g., "/workspace/hadmin")
+        selected_servers: List of {name, package} dicts for selected servers
+        manifest_servers: List of all servers from manifest (to know which we manage)
+
+    Returns:
+        Updated ~/.claude.json dict
+    """
+    import copy
+    settings = copy.deepcopy(claude_settings)
+
+    # Ensure projects structure exists
+    if "projects" not in settings:
+        settings["projects"] = {}
+    if project_path not in settings["projects"]:
+        settings["projects"][project_path] = {}
+    if "mcpServers" not in settings["projects"][project_path]:
+        settings["projects"][project_path]["mcpServers"] = {}
+
+    mcp_servers = settings["projects"][project_path]["mcpServers"]
+
+    # Get names of servers we manage (from manifest)
+    managed_names = {s["name"] for s in manifest_servers}
+
+    # Remove managed servers that are deselected
+    for name in list(mcp_servers.keys()):
+        if name in managed_names:
+            del mcp_servers[name]
+
+    # Add selected servers (format must match Claude's expected structure)
+    for server in selected_servers:
+        mcp_servers[server["name"]] = {
+            "type": "stdio",
+            "command": "npx",
+            "args": [server["package"]],
+            "env": {}
+        }
+
+    return settings
+
+
 class SecretCheckbox(Checkbox):
     """Checkbox for secret selection with availability indicator."""
 
@@ -158,11 +228,10 @@ class LauncherApp(App):
                         classes="inline-select",
                     )
 
-            # MCP Servers (all in one section)
+            # MCP Servers - local scope (per-repo .mcp.json, not mixed with other projects)
             with Vertical(classes="section"):
-                yield Label("MCP Servers:")
+                yield Label("MCP Servers (local scope):")
                 with Horizontal(classes="mcp-grid"):
-                    # Installed servers (in container)
                     for server in self.config["mcp_installed"]:
                         name = server["name"]
                         enabled = name in self.config["default_mcp_servers"]
@@ -170,20 +239,6 @@ class LauncherApp(App):
                             server["description"],
                             value=enabled,
                             id=f"mcp-{name}",
-                            classes="mcp-checkbox",
-                        )
-                    # External servers (require auth)
-                    for server in self.config["mcp_external"]:
-                        name = server["name"]
-                        auth = server.get("auth", "")
-                        desc = server["description"]
-                        if auth == "oauth":
-                            desc = f"{desc} [dim](oauth)[/]"
-                        enabled = name in self.config.get("default_mcp_external", [])
-                        yield Checkbox(
-                            desc,
-                            value=enabled,
-                            id=f"mcp-ext-{name}",
                             classes="mcp-checkbox",
                         )
 
@@ -205,6 +260,10 @@ class LauncherApp(App):
                 yield Button("Exit", id="exit-button", variant="error")
 
         yield Footer()
+
+    def on_mount(self) -> None:
+        """Focus the Start button so Enter activates it."""
+        self.query_one("#start-button", Button).focus()
 
     @on(Button.Pressed, "#start-button")
     def handle_start(self) -> None:
@@ -230,22 +289,12 @@ class LauncherApp(App):
         permission_select = self.query_one("#permission-mode", Select)
         permission_mode = permission_select.value
 
-        # Collect MCP servers (installed)
+        # Collect MCP servers (installed in container) - include package info for config generation
         mcp_servers = []
         for server in self.config["mcp_installed"]:
             checkbox = self.query_one(f"#mcp-{server['name']}", Checkbox)
             if checkbox.value:
-                mcp_servers.append(server["name"])
-
-        # Collect MCP servers (external)
-        mcp_external = []
-        for server in self.config["mcp_external"]:
-            try:
-                checkbox = self.query_one(f"#mcp-ext-{server['name']}", Checkbox)
-                if checkbox.value:
-                    mcp_external.append(server["name"])
-            except Exception:
-                pass
+                mcp_servers.append({"name": server["name"], "package": server["package"]})
 
         # Collect secrets
         secrets = []
@@ -272,7 +321,6 @@ class LauncherApp(App):
             "action": "start",
             "permission_mode": permission_mode,
             "mcp_servers": mcp_servers,
-            "mcp_external": mcp_external,
             "secrets": secrets,
             "session_arg": session_arg,
         }
@@ -327,21 +375,31 @@ def load_config() -> dict:
             pass
 
     mcp_installed = mcp_manifest.get("installed", [])
-    mcp_external = mcp_manifest.get("external", [])
 
-    # Use saved MCP selections or fall back to config defaults (empty = all off on first start)
-    if "mcp_servers" in user_prefs:
+    # Claude's main config file - MCP servers go under projects.<path>.mcpServers
+    # This is what `claude mcp add -s local` uses - automatically trusted (no approval needed)
+    # Inside container: /workspace/.claude.json
+    claude_settings_path = Path(agent_home) / "workspace" / ".claude.json"
+    # Project path as seen inside container (for the projects key)
+    container_project_path = f"/workspace/{repo_name}"
+    claude_settings = load_claude_settings(claude_settings_path)
+
+    # Get currently enabled MCP servers from Claude's actual config
+    enabled_in_claude = get_enabled_mcp_servers(claude_settings, container_project_path)
+
+    # Determine which installed servers are currently enabled
+    # Priority: Claude's settings > saved preferences > defaults
+    if enabled_in_claude:
+        default_mcp_servers = [s["name"] for s in mcp_installed if s["name"] in enabled_in_claude]
+    elif "mcp_servers" in user_prefs:
         default_mcp_servers = user_prefs["mcp_servers"]
     else:
         default_mcp_str = os.environ.get("DEFAULT_MCP_SERVERS", "")
         default_mcp_servers = [m.strip() for m in default_mcp_str.split(",") if m.strip()] if default_mcp_str else DEFAULT_MCP_ENABLED
 
-    # External MCP servers from preferences
-    default_mcp_external = user_prefs.get("mcp_external", [])
-
     # Selectable secrets (shown in TUI for user selection)
     secrets_dir = Path(agent_home) / "workspace" / ".secrets"
-    selectable_secrets_str = os.environ.get("SELECTABLE_SECRETS", "github_token:GitHub token|mqtt_username:MQTT user|mqtt_password:MQTT pass")
+    selectable_secrets_str = os.environ.get("SELECTABLE_SECRETS", "github_token:GitHub token|ha_access_token:HA token|mqtt_username:MQTT user|mqtt_password:MQTT pass")
 
     secrets = []
     for entry in selectable_secrets_str.split("|"):
@@ -374,13 +432,14 @@ def load_config() -> dict:
         "permission_modes": permission_modes,
         "default_permission_mode": default_permission_mode,
         "mcp_installed": mcp_installed,
-        "mcp_external": mcp_external,
         "default_mcp_servers": default_mcp_servers,
-        "default_mcp_external": default_mcp_external,
         "secrets": secrets,
         "default_secrets": default_secrets,
         "sessions": sessions,
         "prefs_path": prefs_path,
+        "claude_settings_path": claude_settings_path,
+        "claude_settings": claude_settings,
+        "container_project_path": container_project_path,
     }
 
 
@@ -396,15 +455,27 @@ def main() -> int:
         with open(output_file, "w") as f:
             json.dump(app.result, f)
 
-        # Save user preferences for next invocation (only on successful start)
+        # Save user preferences and update Claude's settings (only on successful start)
         if app.result.get("action") == "start":
+            # Save just server names (not packages) for preferences - packages may change between builds
+            mcp_server_names = [s["name"] if isinstance(s, dict) else s for s in app.result.get("mcp_servers", [])]
             prefs = {
                 "permission_mode": app.result.get("permission_mode"),
-                "mcp_servers": app.result.get("mcp_servers", []),
-                "mcp_external": app.result.get("mcp_external", []),
+                "mcp_servers": mcp_server_names,
                 "secrets": app.result.get("secrets", []),
             }
             save_user_preferences(config["prefs_path"], prefs)
+
+            # Update Claude's ~/.claude.json with MCP server configuration
+            # Writes to projects.<container_project_path>.mcpServers (local scope)
+            selected_servers = app.result.get("mcp_servers", [])
+            updated_settings = update_mcp_in_settings(
+                config["claude_settings"],
+                config["container_project_path"],
+                selected_servers,
+                config["mcp_installed"]
+            )
+            save_claude_settings(config["claude_settings_path"], updated_settings)
 
         return 0 if app.result.get("action") == "start" else 1
     return 1

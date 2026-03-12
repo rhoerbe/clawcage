@@ -7,6 +7,19 @@
 #   start-ha-agent --quick      # start Claude Code without TUI (use defaults)
 #   start-ha-agent --test       # run preflight and network connectivity tests
 #   start-ha-agent bash         # start bash shell
+#
+# MCP Server Configuration Flow (local scope - per project):
+#   1. Container has MCP manifest at /etc/freigang/mcp-manifest.json (installed servers)
+#   2. TUI reads ~/.claude.json projects.<path>.mcpServers to show current MCP state
+#   3. TUI merges with manifest to show available vs enabled servers
+#   4. User selects/deselects servers in TUI
+#   5. TUI writes to ~/.claude.json projects./workspace/$REPO_NAME.mcpServers
+#   6. Claude reads its config on startup - automatically trusted (no approval needed)
+#
+#   Bi-directional sync: Changes via TUI or `claude mcp add -s local` are both visible.
+#   Inside container: /workspace/.claude.json (projects key uses /workspace/$REPO_NAME)
+#   On host: $AGENT_HOME/workspace/.claude.json
+#
 set -e
 
 AGENT_USER="ha_agent"
@@ -37,9 +50,9 @@ CONTAINER_NAME="$CONTAINER_IMAGE"
 
 # TUI state variables
 SELECTED_PERMISSION_MODE="$DEFAULT_PERMISSION_MODE"
-SELECTED_MCP_SERVERS=("${DEFAULT_MCP_SERVERS[@]}")
 SELECTED_SECRETS=("github_token")  # Default: only github_token on first start
 SELECTED_SESSION=""
+SELECTED_MCP_SERVER_NAMES=""  # For display only - actual config in Claude's settings.json
 SKIP_TUI=false
 
 # Parse initial arguments
@@ -171,58 +184,23 @@ run_python_tui() {
     fi
 
     permission_mode=$(echo "$tui_output" | $py -c "import sys, json; d=json.load(sys.stdin); print(d.get('permission_mode', ''))")
-    mcp_servers=$(echo "$tui_output" | $py -c "import sys, json; d=json.load(sys.stdin); print(','.join(d.get('mcp_servers', [])))")
     secrets=$(echo "$tui_output" | $py -c "import sys, json; d=json.load(sys.stdin); print(','.join(d.get('secrets', [])))")
     session_arg=$(echo "$tui_output" | $py -c "import sys, json; d=json.load(sys.stdin); print(d.get('session_arg', ''))")
 
+    # Extract MCP server names for display (actual config is written to Claude's settings.json by TUI)
+    mcp_names=$(echo "$tui_output" | $py -c "import sys, json; servers=json.load(sys.stdin).get('mcp_servers', []); print(' '.join(s['name'] if isinstance(s,dict) else s for s in servers))")
+
     # Apply selections
     SELECTED_PERMISSION_MODE="$permission_mode"
-    IFS=',' read -ra SELECTED_MCP_SERVERS <<< "$mcp_servers"
     IFS=',' read -ra SELECTED_SECRETS <<< "$secrets"
     SELECTED_SESSION="$session_arg"
+    SELECTED_MCP_SERVER_NAMES="$mcp_names"
 
     return 0
 }
 
-build_mcp_config() {
-    local config_file="$AGENT_HOME/workspace/$REPO_NAME/.claude/settings.json"
-    local temp_file="${config_file}.tmp"
-
-    # Start building JSON
-    echo '{' > "$temp_file"
-    echo '  "mcpServers": {' >> "$temp_file"
-
-    local first=true
-    for server_name in "${SELECTED_MCP_SERVERS[@]}"; do
-        # Find the package for this server
-        for server in "${AVAILABLE_MCP_SERVERS[@]}"; do
-            local name package description
-            IFS=':' read -r name package description <<< "$server"
-            if [[ "$name" == "$server_name" ]]; then
-                if [[ "$first" == true ]]; then
-                    first=false
-                else
-                    echo ',' >> "$temp_file"
-                fi
-                cat >> "$temp_file" << EOF
-    "$name": {
-      "command": "npx",
-      "args": ["$package"]
-    }
-EOF
-                break
-            fi
-        done
-    done
-
-    echo '' >> "$temp_file"
-    echo '  }' >> "$temp_file"
-    echo '}' >> "$temp_file"
-
-    mv "$temp_file" "$config_file"
-}
-
 build_claude_args() {
+    # MCP servers are configured in Claude's settings.json (written by TUI)
     local args="--permission-mode $SELECTED_PERMISSION_MODE"
 
     if [[ -n "$SELECTED_SESSION" ]]; then
@@ -237,7 +215,7 @@ show_final_command() {
     claude_args=$(build_claude_args)
 
     echo "Starting: \`claude $claude_args\`"
-    echo "MCP Servers: ${SELECTED_MCP_SERVERS[*]:-none}  |  Secrets: ${SELECTED_SECRETS[*]:-none}"
+    echo "MCP Servers: ${SELECTED_MCP_SERVER_NAMES:-none}  |  Secrets: ${SELECTED_SECRETS[*]:-none}"
 }
 
 run_tui() {
@@ -278,6 +256,7 @@ is_secret_selected() {
 load_selected_secrets() {
     # Selectable secrets - only loaded if selected in TUI
     GH_TOKEN=""
+    HA_ACCESS_TOKEN=""
     MQTT_USER=""
     MQTT_PASS=""
 
@@ -285,6 +264,9 @@ load_selected_secrets() {
         GH_TOKEN=$(cat "$AGENT_HOME/workspace/.secrets/github_token")
     fi
 
+    if is_secret_selected "ha_access_token" && [[ -f "$AGENT_HOME/workspace/.secrets/ha_access_token" ]]; then
+        HA_ACCESS_TOKEN=$(cat "$AGENT_HOME/workspace/.secrets/ha_access_token")
+    fi
 
     if is_secret_selected "mqtt_username" && [[ -f "$AGENT_HOME/workspace/.secrets/mqtt_username" ]]; then
         MQTT_USER=$(cat "$AGENT_HOME/workspace/.secrets/mqtt_username")
@@ -298,7 +280,7 @@ load_selected_secrets() {
 # Handle direct command execution (e.g., "start-ha-agent bash")
 if [[ $# -gt 0 && "$1" != "--"* ]]; then
     # For direct commands, load all available secrets (bypass TUI selection)
-    SELECTED_SECRETS=("github_token" "mqtt_username" "mqtt_password")
+    SELECTED_SECRETS=("github_token" "ha_access_token" "mqtt_username" "mqtt_password")
     load_selected_secrets
 
     # Remove old container if exists
@@ -316,8 +298,9 @@ if [[ $# -gt 0 && "$1" != "--"* ]]; then
         -e HTTPS_PROXY=http://host.containers.internal:8888 \
         -e NO_PROXY="api.anthropic.com,claude.ai,platform.claude.com,anthropic.com" \
         -e HOME=/workspace \
-                -e GH_TOKEN="$GH_TOKEN" \
-                -e MQTT_USER="$MQTT_USER" \
+        -e GH_TOKEN="$GH_TOKEN" \
+        -e HA_ACCESS_TOKEN="$HA_ACCESS_TOKEN" \
+        -e MQTT_USER="$MQTT_USER" \
         -e MQTT_PASS="$MQTT_PASS" \
         "$CONTAINER_NAME" \
         "$@"
@@ -339,11 +322,25 @@ if [[ "$SKIP_TUI" == false ]]; then
     fi
 fi
 
+# If TUI was skipped, read MCP server names from Claude's config for display
+if [[ "$SKIP_TUI" == true && -z "$SELECTED_MCP_SERVER_NAMES" ]]; then
+    # MCP servers in ~/.claude.json under projects./workspace/$REPO_NAME.mcpServers
+    CLAUDE_JSON="$AGENT_HOME/workspace/.claude.json"
+    if [[ -f "$CLAUDE_JSON" ]]; then
+        _py="python3"
+        [[ -x "$AGENT_HOME/.venv/bin/python" ]] && _py="$AGENT_HOME/.venv/bin/python"
+        SELECTED_MCP_SERVER_NAMES=$($_py -c "
+import json
+with open('$CLAUDE_JSON') as f:
+    config = json.load(f)
+project = config.get('projects', {}).get('/workspace/$REPO_NAME', {})
+print(' '.join(project.get('mcpServers', {}).keys()))
+" 2>/dev/null || echo "")
+    fi
+fi
+
 # Load secrets based on TUI selection (or defaults if TUI was skipped)
 load_selected_secrets
-
-# Build MCP config from selections
-build_mcp_config
 
 # Build final Claude arguments
 CLAUDE_ARGS=$(build_claude_args)
@@ -366,8 +363,9 @@ exec podman --cgroup-manager=cgroupfs run --rm -it \
     -e HTTPS_PROXY=http://host.containers.internal:8888 \
     -e NO_PROXY="api.anthropic.com,claude.ai,platform.claude.com,anthropic.com" \
     -e HOME=/workspace \
-        -e GH_TOKEN="$GH_TOKEN" \
-        -e MQTT_USER="$MQTT_USER" \
+    -e GH_TOKEN="$GH_TOKEN" \
+    -e HA_ACCESS_TOKEN="$HA_ACCESS_TOKEN" \
+    -e MQTT_USER="$MQTT_USER" \
     -e MQTT_PASS="$MQTT_PASS" \
     "$CONTAINER_NAME" \
     claude $CLAUDE_ARGS
