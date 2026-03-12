@@ -58,13 +58,33 @@ done
 
 get_mcp_manifest_from_container() {
     # Query MCP manifest embedded in the container image
-    # This provides the authoritative list of MCP servers installed in the container
-    local manifest_file="$AGENT_HOME/.cache/freigang/container-mcp-manifest.json"
-    mkdir -p "$(dirname "$manifest_file")"
+    # Cache by image ID to avoid slow container startup on every launch
+    local cache_dir="$AGENT_HOME/.cache/freigang"
+    mkdir -p "$cache_dir"
 
+    # Get current image ID
+    local image_id
+    image_id=$(podman --cgroup-manager=cgroupfs images --format '{{.ID}}' "$CONTAINER_IMAGE" 2>/dev/null)
+    if [[ -z "$image_id" ]]; then
+        echo ""
+        return
+    fi
+
+    local manifest_file="$cache_dir/mcp-manifest-${image_id}.json"
+
+    # Return cached manifest if it exists for this image
+    if [[ -f "$manifest_file" ]]; then
+        echo "$manifest_file"
+        return
+    fi
+
+    # Extract manifest from container (only on first run or after image update)
     if podman --cgroup-manager=cgroupfs run --rm "$CONTAINER_IMAGE" cat /etc/freigang/mcp-manifest.json > "$manifest_file" 2>/dev/null; then
+        # Clean up old cached manifests
+        find "$cache_dir" -name 'mcp-manifest-*.json' ! -name "mcp-manifest-${image_id}.json" -delete 2>/dev/null || true
         echo "$manifest_file"
     else
+        rm -f "$manifest_file"
         echo ""
     fi
 }
@@ -216,13 +236,8 @@ show_final_command() {
     local claude_args
     claude_args=$(build_claude_args)
 
-    echo ""
-    echo "Starting container with command:"
-    echo "  claude $claude_args"
-    echo ""
-    echo "MCP Servers enabled: ${SELECTED_MCP_SERVERS[*]:-none}"
-    echo "Secrets enabled: ${SELECTED_SECRETS[*]:-none}"
-    echo ""
+    echo "Starting: \`claude $claude_args\`"
+    echo "MCP Servers: ${SELECTED_MCP_SERVERS[*]:-none}  |  Secrets: ${SELECTED_SECRETS[*]:-none}"
 }
 
 run_tui() {
