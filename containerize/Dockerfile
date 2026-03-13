@@ -69,8 +69,8 @@ RUN echo "Weekly cache bust: ${WEEKLY_CACHE_BUST}"
 RUN curl -fsSL https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -o /usr/local/bin/yq \
     && chmod +x /usr/local/bin/yq
 
-# Playwright MCP server + browser
-RUN npm install -g @playwright/mcp && npx playwright install chromium
+# Playwright MCP server + browsers (chromium for Playwright MCP, chrome for system integration)
+RUN npm install -g @playwright/mcp && npx playwright install chromium chrome
 
 # =============================================================================
 # TOP TIER: Most frequently changing (Claude Code, local files)
