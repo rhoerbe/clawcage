@@ -310,12 +310,19 @@ if [[ $# -gt 0 && "$1" != "--"* ]]; then
         SECCOMP_PROFILE="$SCRIPT_DIR/seccomp/chrome.json"
     fi
 
+    # Build VNC port mapping if enabled
+    VNC_PORT_MAPPING=""
+    if [[ "$SELECTED_ENABLE_VNC" == "true" ]]; then
+        VNC_PORT_MAPPING="-p 5900:5900"
+    fi
+
     # Start container with the provided command
     exec podman --cgroup-manager=cgroupfs run --rm -it \
         --name "$CONTAINER_NAME" \
         --userns=keep-id \
         --shm-size=2g \
         ${SECCOMP_PROFILE:+--security-opt seccomp="$SECCOMP_PROFILE"} \
+        ${VNC_PORT_MAPPING} \
         -v "$AGENT_HOME/workspace":/workspace:Z \
         -v "$AGENT_HOME/sessions":/sessions:Z \
         -w "/workspace/$REPO_NAME" \
@@ -387,12 +394,19 @@ elif [[ -f "$SCRIPT_DIR/seccomp/chrome.json" ]]; then
     SECCOMP_PROFILE="$SCRIPT_DIR/seccomp/chrome.json"
 fi
 
+# Build VNC port mapping if enabled
+VNC_PORT_MAPPING=""
+if [[ "$SELECTED_ENABLE_VNC" == "true" ]]; then
+    VNC_PORT_MAPPING="-p 5900:5900"
+fi
+
 # Start container with Claude
 exec podman --cgroup-manager=cgroupfs run --rm -it \
     --name "$CONTAINER_NAME" \
     --userns=keep-id \
     --shm-size=2g \
     ${SECCOMP_PROFILE:+--security-opt seccomp="$SECCOMP_PROFILE"} \
+    ${VNC_PORT_MAPPING} \
     -v "$AGENT_HOME/workspace":/workspace:Z \
     -v "$AGENT_HOME/sessions":/sessions:Z \
     -w "/workspace/$REPO_NAME" \

@@ -21,8 +21,10 @@ start_xvfb() {
 
 start_vnc() {
     if [ "$ENABLE_VNC" = "true" ]; then
-        echo "Starting x11vnc (localhost only)"
-        x11vnc -display :99 -forever -localhost -quiet &
+        echo "Starting x11vnc on port 5900"
+        # Note: Binds to all interfaces so it can be accessed via port mapping
+        # Security: Port 5900 is only exposed when user enables VNC in TUI
+        x11vnc -display :99 -forever -nopw -quiet &
     fi
 }
 
