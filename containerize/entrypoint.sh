@@ -10,7 +10,8 @@ ENABLE_VNC=${ENABLE_VNC:-false}
 
 start_xvfb() {
     echo "Starting Xvfb on :99"
-    Xvfb :99 -screen 0 1920x1080x24 &
+    # Redirect Xvfb stderr to suppress /tmp/.X11-unix warning (expected in containers)
+    Xvfb :99 -screen 0 1920x1080x24 2>/dev/null &
     export DISPLAY=:99
     # Wait for X server to be ready
     for i in {1..10}; do
@@ -44,6 +45,7 @@ start_chrome() {
 
     # Launch Chrome in the background
     # Claude Code connects to Chrome via the extension
+    # Redirect stderr to suppress harmless dbus/GPU errors
     google-chrome \
         --no-first-run \
         --no-default-browser-check \
@@ -52,8 +54,11 @@ start_chrome() {
         --disable-gpu \
         --disable-software-rasterizer \
         --disable-dev-shm-usage \
+        --log-level=3 \
+        --silent-debugger-extension-api \
         --user-data-dir="$PROFILE_DIR" \
-        "https://claude.ai" &
+        "https://claude.ai" \
+        >/dev/null 2>&1 &
 
     CHROME_PID=$!
 
