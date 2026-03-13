@@ -89,6 +89,23 @@ On first startup:
 - No `CAP_SYS_ADMIN` or other elevated capabilities required
 - VNC binds to localhost only by default
 
+## Known Issues
+
+### Chrome + VNC Mode
+**Status:** Partial functionality - Chrome starts but extension connection unreliable
+
+The Chrome browser launches successfully with VNC enabled, but the Claude Chrome extension may not connect properly to Claude Code. This is under investigation.
+
+**Workaround:** Use Playwright mode for reliable browser automation:
+```bash
+./start_container.sh --browser=playwright
+```
+
+**Symptoms:**
+- Chrome starts and displays on VNC
+- Extension shows as not connected
+- Claude Code cannot control the browser
+
 ## Testing
 
 ### Run Chrome Integration Test
