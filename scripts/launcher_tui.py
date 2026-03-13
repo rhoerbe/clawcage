@@ -303,6 +303,13 @@ class LauncherApp(App):
         """Focus the Start button so Enter activates it."""
         self.query_one("#start-button", Button).focus()
 
+    @on(RadioSet.Changed, "#browser-mode")
+    def handle_browser_mode_change(self, event: RadioSet.Changed) -> None:
+        """Auto-deselect VNC when browser mode is None."""
+        if event.pressed and event.pressed.id == "browser-none":
+            vnc_checkbox = self.query_one("#enable-vnc", Checkbox)
+            vnc_checkbox.value = False
+
     @on(Button.Pressed, "#start-button")
     def handle_start(self) -> None:
         self.collect_and_exit(start=True)
