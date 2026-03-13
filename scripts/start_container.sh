@@ -53,6 +53,8 @@ SELECTED_PERMISSION_MODE="$DEFAULT_PERMISSION_MODE"
 SELECTED_SECRETS=("github_token")  # Default: only github_token on first start
 SELECTED_SESSION=""
 SELECTED_MCP_SERVER_NAMES=""  # For display only - actual config in Claude's settings.json
+SELECTED_BROWSER_MODE="none"
+SELECTED_ENABLE_VNC="false"
 SKIP_TUI=false
 
 # Parse initial arguments
@@ -186,6 +188,8 @@ run_python_tui() {
     permission_mode=$(echo "$tui_output" | $py -c "import sys, json; d=json.load(sys.stdin); print(d.get('permission_mode', ''))")
     secrets=$(echo "$tui_output" | $py -c "import sys, json; d=json.load(sys.stdin); print(','.join(d.get('secrets', [])))")
     session_arg=$(echo "$tui_output" | $py -c "import sys, json; d=json.load(sys.stdin); print(d.get('session_arg', ''))")
+    browser_mode=$(echo "$tui_output" | $py -c "import sys, json; d=json.load(sys.stdin); print(d.get('browser_mode', 'none'))")
+    enable_vnc=$(echo "$tui_output" | $py -c "import sys, json; d=json.load(sys.stdin); print(str(d.get('enable_vnc', False)).lower())")
 
     # Extract MCP server names for display (actual config is written to Claude's settings.json by TUI)
     mcp_names=$(echo "$tui_output" | $py -c "import sys, json; servers=json.load(sys.stdin).get('mcp_servers', []); print(' '.join(s['name'] if isinstance(s,dict) else s for s in servers))")
@@ -195,6 +199,8 @@ run_python_tui() {
     IFS=',' read -ra SELECTED_SECRETS <<< "$secrets"
     SELECTED_SESSION="$session_arg"
     SELECTED_MCP_SERVER_NAMES="$mcp_names"
+    SELECTED_BROWSER_MODE="$browser_mode"
+    SELECTED_ENABLE_VNC="$enable_vnc"
 
     return 0
 }
@@ -207,6 +213,11 @@ build_claude_args() {
         args="$args $SELECTED_SESSION"
     fi
 
+    # Add --chrome flag if Chrome browser mode is selected
+    if [[ "$SELECTED_BROWSER_MODE" == "chrome" ]]; then
+        args="$args --chrome"
+    fi
+
     echo "$args"
 }
 
@@ -214,8 +225,13 @@ show_final_command() {
     local claude_args
     claude_args=$(build_claude_args)
 
+    local browser_label="None"
+    [[ "$SELECTED_BROWSER_MODE" == "playwright" ]] && browser_label="Playwright"
+    [[ "$SELECTED_BROWSER_MODE" == "chrome" ]] && browser_label="Chrome"
+    [[ "$SELECTED_ENABLE_VNC" == "true" ]] && browser_label="$browser_label+VNC"
+
     echo "Starting: \`claude $claude_args\`"
-    echo "MCP Servers: ${SELECTED_MCP_SERVER_NAMES:-none}  |  Secrets: ${SELECTED_SECRETS[*]:-none}"
+    echo "MCP Servers: ${SELECTED_MCP_SERVER_NAMES:-none}  |  Secrets: ${SELECTED_SECRETS[*]:-none}  |  Browser: $browser_label"
 }
 
 run_tui() {
@@ -286,10 +302,20 @@ if [[ $# -gt 0 && "$1" != "--"* ]]; then
     # Remove old container if exists
     podman --cgroup-manager=cgroupfs rm -f "$CONTAINER_NAME" 2>/dev/null || true
 
+    # Get seccomp profile path
+    SECCOMP_PROFILE=""
+    if [[ -f "$SCRIPT_DIR/../containerize/seccomp/chrome.json" ]]; then
+        SECCOMP_PROFILE="$SCRIPT_DIR/../containerize/seccomp/chrome.json"
+    elif [[ -f "$SCRIPT_DIR/seccomp/chrome.json" ]]; then
+        SECCOMP_PROFILE="$SCRIPT_DIR/seccomp/chrome.json"
+    fi
+
     # Start container with the provided command
     exec podman --cgroup-manager=cgroupfs run --rm -it \
         --name "$CONTAINER_NAME" \
         --userns=keep-id \
+        --shm-size=2g \
+        ${SECCOMP_PROFILE:+--security-opt seccomp="$SECCOMP_PROFILE"} \
         -v "$AGENT_HOME/workspace":/workspace:Z \
         -v "$AGENT_HOME/sessions":/sessions:Z \
         -w "/workspace/$REPO_NAME" \
@@ -298,6 +324,8 @@ if [[ $# -gt 0 && "$1" != "--"* ]]; then
         -e HTTPS_PROXY=http://host.containers.internal:8888 \
         -e NO_PROXY="api.anthropic.com,claude.ai,platform.claude.com,anthropic.com" \
         -e HOME=/workspace \
+        -e BROWSER_MODE="$SELECTED_BROWSER_MODE" \
+        -e ENABLE_VNC="$SELECTED_ENABLE_VNC" \
         -e GH_TOKEN="$GH_TOKEN" \
         -e HA_ACCESS_TOKEN="$HA_ACCESS_TOKEN" \
         -e MQTT_USER="$MQTT_USER" \
@@ -351,10 +379,20 @@ show_final_command
 # Remove old container if exists
 podman --cgroup-manager=cgroupfs rm -f "$CONTAINER_NAME" 2>/dev/null || true
 
+# Get seccomp profile path
+SECCOMP_PROFILE=""
+if [[ -f "$SCRIPT_DIR/../containerize/seccomp/chrome.json" ]]; then
+    SECCOMP_PROFILE="$SCRIPT_DIR/../containerize/seccomp/chrome.json"
+elif [[ -f "$SCRIPT_DIR/seccomp/chrome.json" ]]; then
+    SECCOMP_PROFILE="$SCRIPT_DIR/seccomp/chrome.json"
+fi
+
 # Start container with Claude
 exec podman --cgroup-manager=cgroupfs run --rm -it \
     --name "$CONTAINER_NAME" \
     --userns=keep-id \
+    --shm-size=2g \
+    ${SECCOMP_PROFILE:+--security-opt seccomp="$SECCOMP_PROFILE"} \
     -v "$AGENT_HOME/workspace":/workspace:Z \
     -v "$AGENT_HOME/sessions":/sessions:Z \
     -w "/workspace/$REPO_NAME" \
@@ -363,6 +401,8 @@ exec podman --cgroup-manager=cgroupfs run --rm -it \
     -e HTTPS_PROXY=http://host.containers.internal:8888 \
     -e NO_PROXY="api.anthropic.com,claude.ai,platform.claude.com,anthropic.com" \
     -e HOME=/workspace \
+    -e BROWSER_MODE="$SELECTED_BROWSER_MODE" \
+    -e ENABLE_VNC="$SELECTED_ENABLE_VNC" \
     -e GH_TOKEN="$GH_TOKEN" \
     -e HA_ACCESS_TOKEN="$HA_ACCESS_TOKEN" \
     -e MQTT_USER="$MQTT_USER" \

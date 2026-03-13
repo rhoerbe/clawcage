@@ -9,7 +9,7 @@ from pathlib import Path
 from textual import on
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical
-from textual.widgets import Button, Checkbox, Footer, Header, Label, Select, Static
+from textual.widgets import Button, Checkbox, Footer, Header, Label, RadioButton, RadioSet, Select, Static
 
 
 # Fallback MCP servers if manifest not found
@@ -156,6 +156,21 @@ class LauncherApp(App):
         margin-right: 2;
     }
 
+    .browser-radio-row {
+        layout: horizontal;
+        height: auto;
+        align: left middle;
+    }
+
+    .browser-radio-row RadioButton {
+        margin-right: 2;
+    }
+
+    .browser-vnc-checkbox {
+        width: auto;
+        margin-left: 3;
+    }
+
     .secrets-grid {
         layout: horizontal;
         height: auto;
@@ -242,6 +257,19 @@ class LauncherApp(App):
                             classes="mcp-checkbox",
                         )
 
+            # Browser Automation
+            with Vertical(classes="section"):
+                yield Label("Browser Automation:")
+                with Horizontal(classes="browser-radio-row"):
+                    default_mode = self.config.get("default_browser_mode", "none")
+                    yield RadioSet(
+                        RadioButton("None", value=(default_mode == "none"), id="browser-none"),
+                        RadioButton("Playwright", value=(default_mode == "playwright"), id="browser-playwright"),
+                        RadioButton("Claude Chrome", value=(default_mode == "chrome"), id="browser-chrome"),
+                        id="browser-mode",
+                    )
+                    yield Checkbox("Enable VNC", value=self.config.get("default_enable_vnc", False), id="enable-vnc", classes="browser-vnc-checkbox")
+
             # Secrets (selectable - only available secrets can be enabled)
             with Vertical(classes="section"):
                 yield Label("Secrets (pass to container):")
@@ -317,12 +345,29 @@ class LauncherApp(App):
         else:
             session_arg = f"--resume {session_value}"
 
+        # Collect browser automation settings
+        browser_mode_radioset = self.query_one("#browser-mode", RadioSet)
+        browser_mode = "none"
+        if browser_mode_radioset.pressed_button:
+            button_id = browser_mode_radioset.pressed_button.id
+            if button_id == "browser-playwright":
+                browser_mode = "playwright"
+            elif button_id == "browser-chrome":
+                browser_mode = "chrome"
+            else:
+                browser_mode = "none"
+
+        vnc_checkbox = self.query_one("#enable-vnc", Checkbox)
+        enable_vnc = vnc_checkbox.value
+
         self.result = {
             "action": "start",
             "permission_mode": permission_mode,
             "mcp_servers": mcp_servers,
             "secrets": secrets,
             "session_arg": session_arg,
+            "browser_mode": browser_mode,
+            "enable_vnc": enable_vnc,
         }
         self.exit()
 
@@ -413,6 +458,10 @@ def load_config() -> dict:
     # Default secrets from preferences (only github_token enabled by default on first start)
     default_secrets = user_prefs.get("secrets", ["github_token"])
 
+    # Browser automation settings from preferences
+    default_browser_mode = user_prefs.get("browser_mode", "none")
+    default_enable_vnc = user_prefs.get("enable_vnc", False)
+
     # Sessions
     sessions_dir = Path(agent_home) / "workspace" / repo_name / ".claude" / "projects"
     sessions = []
@@ -435,6 +484,8 @@ def load_config() -> dict:
         "default_mcp_servers": default_mcp_servers,
         "secrets": secrets,
         "default_secrets": default_secrets,
+        "default_browser_mode": default_browser_mode,
+        "default_enable_vnc": default_enable_vnc,
         "sessions": sessions,
         "prefs_path": prefs_path,
         "claude_settings_path": claude_settings_path,
@@ -463,6 +514,8 @@ def main() -> int:
                 "permission_mode": app.result.get("permission_mode"),
                 "mcp_servers": mcp_server_names,
                 "secrets": app.result.get("secrets", []),
+                "browser_mode": app.result.get("browser_mode", "none"),
+                "enable_vnc": app.result.get("enable_vnc", False),
             }
             save_user_preferences(config["prefs_path"], prefs)
 
