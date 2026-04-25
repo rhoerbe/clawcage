@@ -38,6 +38,15 @@ RUN apt-get update && apt-get install -y \
     libasound2 libatspi2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
+# Capability: install PyPi packages
+# If the agent needs a python package, it can create a venv
+RUN apt-get update && apt-get install -y \
+    python3 \
+    python3-pip \
+    python3-venv \
+    --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/*
+
 # Google Chrome Stable installation
 RUN wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | gpg --dearmor > /usr/share/keyrings/google-chrome.gpg && \
     echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome.gpg] http://dl.google.com/linux/chrome/deb/ stable main" \
