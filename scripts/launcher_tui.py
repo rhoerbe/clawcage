@@ -11,7 +11,7 @@ import yaml
 from textual import on
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical
-from textual.widgets import Button, Checkbox, Footer, Header, Label, RadioButton, RadioSet, Select, Static
+from textual.widgets import Button, Checkbox, Collapsible, Footer, Header, Label, RadioButton, RadioSet, Select, Static
 
 
 # Fallback MCP servers if manifest not found
@@ -206,14 +206,36 @@ class LauncherApp(App):
         background: $error;
     }
 
-    .webgrp-grid {
+    .webgrp-row {
         layout: horizontal;
         height: auto;
+        align: left middle;
+        margin: 0;
+        padding: 0;
     }
 
     .webgrp-checkbox {
         width: auto;
-        margin-right: 2;
+        margin: 0;
+        padding: 0;
+    }
+
+    .webgrp-collapsible {
+        width: 1fr;
+        height: auto;
+        margin: 0;
+        padding: 0;
+    }
+
+    .webgrp-collapsible > CollapsibleTitle {
+        padding: 0 1;
+        height: 1;
+    }
+
+    .webgrp-url {
+        height: 1;
+        padding-left: 4;
+        color: $text-muted;
     }
     """
 
@@ -313,21 +335,25 @@ class LauncherApp(App):
                         yield Static("[dim]No secrets configured[/]")
 
             # Web Access Filter (only when policy groups are available)
+            # Each group: checkbox (enable/disable) + collapsible (expand to see URLs)
             if self.config.get("web_resource_groups"):
                 with Vertical(classes="section"):
                     yield Label("Web Access Filter:")
-                    with Horizontal(classes="webgrp-grid"):
-                        for group in self.config["web_resource_groups"]:
-                            name = group["name"]
-                            url_count = len(group["urls"])
-                            enabled = name in self.config.get("default_web_groups", [name])
-                            safe_id = re.sub(r"\W", "_", name)
+                    for group in self.config["web_resource_groups"]:
+                        name = group["name"]
+                        urls = group["urls"]
+                        enabled = name in self.config.get("default_web_groups", [name])
+                        safe_id = re.sub(r"\W", "_", name)
+                        with Horizontal(classes="webgrp-row"):
                             yield Checkbox(
-                                f"{name} ({url_count} URLs)",
+                                "",
                                 value=enabled,
                                 id=f"webgrp-{safe_id}",
                                 classes="webgrp-checkbox",
                             )
+                            with Collapsible(title=f"{name} ({len(urls)} URLs)", collapsed=True, classes="webgrp-collapsible"):
+                                for url in urls:
+                                    yield Label(url, classes="webgrp-url")
 
             # Buttons
             with Horizontal(id="button-row"):
